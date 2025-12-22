@@ -55,6 +55,13 @@ func (m *MuxManager) OpenStream(id uint16) io.ReadWriteCloser {
 	return &VirtualConn{id: id, manager: m, readCh: ch}
 }
 
+// Closebt 关闭物理蓝牙连接
+func (m *MuxManager) CloseBt() {
+	if m.physical != nil {
+		m.physical.Close()
+	}
+}
+
 // VirtualConn 实现了 io.ReadWriteCloser，业务代码可以直接 io.Copy 它
 type VirtualConn struct {
 	id      uint16

@@ -1,14 +1,14 @@
 package main
 
 import (
+	"dosgo/btProxy/comm"
+	"dosgo/btProxy/icon"
 	"fmt"
-	"image/color"
 	"strconv"
 	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
@@ -16,18 +16,11 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// Config 存储应用程序配置
-type Config struct {
-	BluetoothMAC string
-	Port         int
-	AutoStart    bool
-}
-
 // AppUI 管理应用程序界面
 type AppUI struct {
 	app    fyne.App
 	window fyne.Window
-	config *Config
+	config *comm.Config
 
 	// UI 组件
 	macEntry  *widget.Entry
@@ -47,35 +40,23 @@ func NewAppUI() *AppUI {
 	a := app.NewWithID("com.bluetooth.proxy")
 	w := a.NewWindow("蓝牙代理工具")
 	w.SetIcon(resourceIconPng) // 需要添加图标资源
-
+	a.SetIcon(resourceIconPng)
 	// 默认配置
-	config := &Config{
-		BluetoothMAC: "00:11:22:33:44:55",
-		Port:         8080,
-		AutoStart:    false,
-	}
 
 	return &AppUI{
 		app:    a,
 		window: w,
-		config: config,
+		config: comm.LoadConfig(),
 	}
 }
 
-// 加载资源图标（内嵌在代码中）
-// 你需要准备一个 32x32 的 PNG 图标，然后使用 fyne bundle 命令生成资源文件
-// 这里先使用内置的 fyne 主题图标，实际使用时替换为你的图标
 var resourceIconPng = &fyne.StaticResource{
-	StaticName:    "icon.png",
-	StaticContent: []byte{}, // 这里放置实际的图标数据
+	StaticName:    "logo.png",
+	StaticContent: icon.IconDataPng, //
 }
 
 // createUI 创建用户界面
 func (ui *AppUI) createUI() fyne.CanvasObject {
-	// 标题
-	title := canvas.NewText("蓝牙代理工具", color.NRGBA{R: 0, G: 122, B: 255, A: 255})
-	title.TextSize = 20
-	title.TextStyle = fyne.TextStyle{Bold: true}
 
 	// 蓝牙 MAC 地址输入框
 	ui.macEntry = widget.NewEntry()
@@ -114,19 +95,23 @@ func (ui *AppUI) createUI() fyne.CanvasObject {
 		return nil
 	}
 	portForm := &widget.FormItem{
-		Text:   "端口号:",
+		Text:   "监听端口号:",
 		Widget: ui.portEntry,
 	}
 
 	// 自动启动复选框
-	ui.autoStart = widget.NewCheck("开机自动启动", func(checked bool) {
+	ui.autoStart = widget.NewCheck("自动启动服务", func(checked bool) {
 		ui.config.AutoStart = checked
-		ui.saveConfig()
+		comm.SaveConfig(ui.config)
 	})
 	ui.autoStart.SetChecked(ui.config.AutoStart)
 
 	// 启动按钮
 	ui.startBtn = widget.NewButton("启动代理", func() {
+		if ui.startBtn.Text == "停止代理" {
+			ui.stopProxy()
+			return
+		}
 		if err := ui.startProxy(); err != nil {
 			dialog.ShowError(err, ui.window)
 		} else {
@@ -149,10 +134,8 @@ func (ui *AppUI) createUI() fyne.CanvasObject {
 
 	// 布局
 	form := container.NewVBox(
-		title,
 		widget.NewSeparator(),
-		macForm.Widget.(*widget.Form).CreateRenderer().Objects()[0].(*fyne.Container),
-		portForm.Widget.(*widget.Form).CreateRenderer().Objects()[0].(*fyne.Container),
+		container.New(layout.NewGridWrapLayout(fyne.NewSize(300, 180)), widget.NewForm(macForm, portForm)),
 		ui.autoStart,
 		layout.NewSpacer(),
 		container.NewHBox(
@@ -165,6 +148,12 @@ func (ui *AppUI) createUI() fyne.CanvasObject {
 	)
 
 	return container.NewPadded(form)
+}
+
+func (ui *AppUI) stopProxy() error {
+	comm.StopProxy()
+	ui.startBtn.Text = "启动代理"
+	return nil
 }
 
 // startProxy 启动蓝牙代理
@@ -181,26 +170,13 @@ func (ui *AppUI) startProxy() error {
 	port, _ := strconv.Atoi(ui.portEntry.Text)
 	ui.config.BluetoothMAC = ui.macEntry.Text
 	ui.config.Port = port
-	ui.saveConfig()
+	comm.SaveConfig(ui.config)
 
-	// TODO: 这里添加实际的蓝牙代理启动逻辑
+	go comm.StartProxy(fmt.Sprintf(":%d", port), ui.macEntry.Text)
 	fmt.Printf("启动蓝牙代理: MAC=%s, Port=%d, AutoStart=%v\n",
 		ui.config.BluetoothMAC, ui.config.Port, ui.config.AutoStart)
-
-	// 模拟启动过程
-	go func() {
-		fmt.Println("正在连接蓝牙设备...")
-		fmt.Println("端口映射中...")
-		fmt.Println("代理服务已就绪")
-	}()
-
+	ui.startBtn.Text = "停止代理"
 	return nil
-}
-
-// saveConfig 保存配置
-func (ui *AppUI) saveConfig() {
-	// TODO: 保存配置到文件
-	fmt.Printf("保存配置: %+v\n", ui.config)
 }
 
 // hideToTray 隐藏窗口到系统托盘
@@ -225,13 +201,11 @@ func (ui *AppUI) setupTray(desk desktop.App) {
 	})
 
 	// 如果已经存在托盘菜单，先移除
-	//if desk.(desktop.App).Driver().Device().IsMobile() {
 	desk.SetSystemTrayMenu(fyne.NewMenu("蓝牙代理",
 		ui.showMenu,
 		fyne.NewMenuItemSeparator(),
 		ui.quitMenu,
 	))
-	//}
 }
 
 // showWindow 显示窗口
@@ -258,26 +232,16 @@ func (ui *AppUI) Run() {
 			ui.window.Hide()
 		})
 	}
-
-	// 加载配置
-	ui.loadConfig()
-
+	//自动启动
+	if ui.config.AutoStart {
+		ui.startProxy()
+	}
 	ui.window.ShowAndRun()
-}
-
-// loadConfig 加载配置
-func (ui *AppUI) loadConfig() {
-	// TODO: 从文件加载配置
-	// 这里先使用默认配置
-	ui.macEntry.SetText(ui.config.BluetoothMAC)
-	ui.portEntry.SetText(strconv.Itoa(ui.config.Port))
-	ui.autoStart.SetChecked(ui.config.AutoStart)
 }
 
 func main() {
 	// 创建应用实例
 	ui := NewAppUI()
-
 	// 运行应用
 	ui.Run()
 }

@@ -1,0 +1,1 @@
+windres -o .\btProxy.syso -i .\btProxy.rc

@@ -1,0 +1,4 @@
+#define ID_MANIFEST 1
+#define RT_MANIFEST 24
+IDI_ICON1 ICON "logo.ico"
+ID_MANIFEST RT_MANIFEST "btProxy.manifest"

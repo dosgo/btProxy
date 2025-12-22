@@ -17,7 +17,16 @@ import (
 var modws2_32 = windows.NewLazySystemDLL("ws2_32.dll")
 var procConnect = modws2_32.NewProc("connect")
 
-func connectByAddr(macAddrStr string) (io.ReadWriteCloser, error) {
+type ReadWriteCloseWithDeadline interface {
+	// 读写关闭
+	io.ReadWriteCloser
+	// 超时控制
+	SetDeadline(t time.Time) error
+	SetReadDeadline(t time.Time) error
+	SetWriteDeadline(t time.Time) error
+}
+
+func connectByAddr(macAddrStr string) (ReadWriteCloseWithDeadline, error) {
 	macAddr, err := macToUint64(macAddrStr)
 	if err != nil {
 		return nil, err
@@ -86,7 +95,7 @@ func NewConnectBT(macAddrStr string) *ConnectBT {
 
 type ConnectBT struct {
 	macAddrStr string
-	conn       io.ReadWriteCloser
+	conn       ReadWriteCloseWithDeadline
 	mu         sync.Mutex // 保护 conn 的并发访问和重连过程
 }
 
@@ -108,6 +117,7 @@ func (a *ConnectBT) Read(p []byte) (n int, err error) {
 		a.mu.Unlock()
 
 		if currConn != nil {
+			//	currConn.SetReadDeadline(time.Now().Add(5 * time.Second))
 			n, err = currConn.Read(p)
 			if err == nil || err == io.EOF {
 				return n, err
@@ -133,6 +143,7 @@ func (a *ConnectBT) Write(p []byte) (n int, err error) {
 		a.mu.Unlock()
 
 		if currConn != nil {
+			currConn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 			n, err = currConn.Write(p)
 			if err == nil {
 				return n, nil
