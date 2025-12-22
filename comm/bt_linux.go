@@ -1,5 +1,7 @@
 package comm
 
-func connectByAddr(macAddrStr string) (ReadWriteCloseWithDeadline, error) {
+import "errors"
 
+func connectByAddr(macAddrStr string) (ReadWriteCloseWithDeadline, error) {
+	return nil, errors.New("..")
 }
