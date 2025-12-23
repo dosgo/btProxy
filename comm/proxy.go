@@ -38,7 +38,7 @@ func StartProxy(mux *MuxManager, tcpPort string, remoteAddr string) {
 				log.Printf("接受连接失败: %v", err)
 				continue
 			}
-			log.Printf("客户端连接: %s", tcpConn.RemoteAddr())
+			log.Printf("%s客户端连接: %s", tcpPort, tcpConn.RemoteAddr())
 			// 处理连接
 			go handleConnection(tcpConn, mux, remoteAddr)
 		}

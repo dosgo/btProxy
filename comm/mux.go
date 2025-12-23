@@ -2,10 +2,12 @@ package comm
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"net"
 	"strconv"
 	"sync"
+	"time"
 )
 
 // MuxManager 负责管理那个唯一的蓝牙物理连接
@@ -42,7 +44,13 @@ func (m *MuxManager) readLoop() {
 
 		m.mu.RLock()
 		if ch, ok := m.streams[id]; ok {
-			ch <- payload
+			select {
+			case ch <- payload:
+				// 成功
+			case <-time.After(time.Millisecond * 500):
+				// 半秒钟还没发进去，说明这个流彻底堵死了，关闭或记录错误
+				fmt.Printf("警告: 流 %d 阻塞超时，丢弃数据包\n", id)
+			}
 		}
 		m.mu.RUnlock()
 	}
@@ -50,7 +58,7 @@ func (m *MuxManager) readLoop() {
 
 // OpenStream 是关键：它返回一个类似流的对象，侵入性极小
 func (m *MuxManager) OpenStream(id uint16, remoteAddr string) io.ReadWriteCloser {
-	ch := make(chan []byte, 100)
+	ch := make(chan []byte, 1024)
 	m.mu.Lock()
 	m.streams[id] = ch
 	m.mu.Unlock()
@@ -99,7 +107,6 @@ type VirtualConn struct {
 	id      uint16
 	manager *MuxManager
 	readCh  chan []byte
-	cache   []byte
 }
 
 func (v *VirtualConn) Write(p []byte) (int, error) {
@@ -108,16 +115,21 @@ func (v *VirtualConn) Write(p []byte) (int, error) {
 }
 
 func (v *VirtualConn) Read(p []byte) (int, error) {
-	if len(v.cache) == 0 {
-		data, ok := <-v.readCh
-		if !ok {
-			return 0, io.EOF
-		}
-		v.cache = data
+	data, ok := <-v.readCh
+	if !ok {
+		return 0, io.EOF
 	}
-	n := copy(p, v.cache)
-	v.cache = v.cache[n:]
+	n := copy(p, data)
 	return n, nil
 }
 
-func (v *VirtualConn) Close() error { return nil } // 可根据需要发送 Close 帧
+func (v *VirtualConn) Close() error {
+
+	v.manager.mu.Lock()
+	if _, ok := v.manager.streams[v.id]; ok {
+		delete(v.manager.streams, v.id)
+	}
+	v.manager.mu.Unlock()
+	close(v.readCh)
+	return nil
+}

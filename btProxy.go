@@ -13,8 +13,15 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
+
+type MappingRow struct {
+	LocalPortEntry  *widget.Entry
+	RemoteAddrEntry *widget.Entry
+	Container       *fyne.Container
+}
 
 // AppUI 管理应用程序界面
 type AppUI struct {
@@ -24,7 +31,6 @@ type AppUI struct {
 
 	// UI 组件
 	macEntry  *widget.Entry
-	portEntry *widget.Entry
 	autoStart *widget.Check
 	startBtn  *widget.Button
 	hideBtn   *widget.Button
@@ -33,6 +39,9 @@ type AppUI struct {
 	systray  fyne.App
 	quitMenu *fyne.MenuItem
 	showMenu *fyne.MenuItem
+
+	mappingsContainer *fyne.Container
+	mappingRows       []*MappingRow
 }
 
 // NewAppUI 创建新的应用程序实例
@@ -75,29 +84,25 @@ func (ui *AppUI) createUI() fyne.CanvasObject {
 		}
 		return nil
 	}
-	macForm := &widget.FormItem{
-		Text:   "蓝牙 MAC 地址:",
-		Widget: ui.macEntry,
+
+	// 动态行容器
+	ui.mappingsContainer = container.NewVBox()
+
+	// 初始化：如果没有配置，默认加一行；如果有配置，循环添加
+	// 这里假设 ui.config.Mappings 是一个 map[string]string 或类似的结构
+	ui.mappingRows = make([]*MappingRow, 0)
+	// 示例初始化
+
+	// 如果配置中有历史数据，加载它们
+	if len(ui.config.Mappings) > 0 {
+		for _, m := range ui.config.Mappings {
+			ui.addMappingRow(strconv.Itoa(m.LocalPort), m.RemoteAddr)
+		}
 	}
 
-	// 端口号输入框
-	ui.portEntry = widget.NewEntry()
-	ui.portEntry.SetPlaceHolder("请输入端口号 (1024-65535)")
-	ui.portEntry.SetText(strconv.Itoa(ui.config.Port))
-	ui.portEntry.Validator = func(s string) error {
-		port, err := strconv.Atoi(s)
-		if err != nil {
-			return fmt.Errorf("端口号必须是数字")
-		}
-		if port < 1024 || port > 65535 {
-			return fmt.Errorf("端口号必须在 1024-65535 之间")
-		}
-		return nil
-	}
-	portForm := &widget.FormItem{
-		Text:   "监听端口号:",
-		Widget: ui.portEntry,
-	}
+	addBtn := widget.NewButtonWithIcon("添加映射行", theme.ContentAddIcon(), func() {
+		ui.addMappingRow("", "")
+	})
 
 	// 自动启动复选框
 	ui.autoStart = widget.NewCheck("自动启动服务", func(checked bool) {
@@ -132,10 +137,17 @@ func (ui *AppUI) createUI() fyne.CanvasObject {
 		statusLabel,
 	)
 
+	scrollArea := container.NewVScroll(ui.mappingsContainer)
+	scrollArea.SetMinSize(fyne.NewSize(0, 150))
+
 	// 布局
 	form := container.NewVBox(
+		widget.NewLabelWithStyle("蓝牙配置", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		ui.macEntry,
 		widget.NewSeparator(),
-		container.New(layout.NewGridWrapLayout(fyne.NewSize(300, 180)), widget.NewForm(macForm, portForm)),
+		widget.NewLabelWithStyle("转发映射 (本地端口 -> 远程地址)", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		scrollArea,
+		addBtn,
 		ui.autoStart,
 		layout.NewSpacer(),
 		container.NewHBox(
@@ -150,6 +162,55 @@ func (ui *AppUI) createUI() fyne.CanvasObject {
 	return container.NewPadded(form)
 }
 
+func (ui *AppUI) createMappingRow(localPort, remoteAddr string) *MappingRow {
+	row := &MappingRow{
+		LocalPortEntry:  widget.NewEntry(),
+		RemoteAddrEntry: widget.NewEntry(),
+	}
+
+	row.LocalPortEntry.SetText(localPort)
+	row.LocalPortEntry.SetPlaceHolder("端口") // 缩短占位符
+
+	row.RemoteAddrEntry.SetText(remoteAddr)
+	row.RemoteAddrEntry.SetPlaceHolder("远程地址 (IP:Port)")
+
+	// 删除按钮
+	delBtn := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
+		ui.removeMappingRow(row)
+	})
+
+	// --- 核心优化：使用自定义布局控制比例 ---
+	// 这里使用一个简单的水平布局，但手动设置端口输入框的最小宽度
+	portContainer := container.NewStack(row.LocalPortEntry)
+
+	// 设置端口输入框的宽度（例如 80 像素）
+	portBox := container.NewHBox(container.NewGridWrap(fyne.NewSize(80, 36), portContainer))
+
+	// 使用 Border 布局：左侧放端口，中间放地址（自动拉伸），右侧放删除按钮
+	row.Container = container.NewBorder(nil, nil, portBox, delBtn, row.RemoteAddrEntry)
+
+	return row
+}
+
+func (ui *AppUI) removeMappingRow(row *MappingRow) {
+	// 从切片中移除
+	for i, r := range ui.mappingRows {
+		if r == row {
+			ui.mappingRows = append(ui.mappingRows[:i], ui.mappingRows[i+1:]...)
+			break
+		}
+	}
+	// 更新 UI
+	ui.mappingsContainer.Remove(row.Container)
+	ui.mappingsContainer.Refresh()
+}
+func (ui *AppUI) addMappingRow(port, addr string) {
+	row := ui.createMappingRow(port, addr)
+	ui.mappingRows = append(ui.mappingRows, row)
+	ui.mappingsContainer.Add(row.Container)
+	ui.mappingsContainer.Refresh()
+}
+
 func (ui *AppUI) stopProxy() error {
 	comm.StopProxy()
 	ui.startBtn.Text = "启动代理"
@@ -162,23 +223,35 @@ func (ui *AppUI) startProxy() error {
 	if err := ui.macEntry.Validate(); err != nil {
 		return fmt.Errorf("MAC 地址无效: %v", err)
 	}
-	if err := ui.portEntry.Validate(); err != nil {
-		return fmt.Errorf("端口号无效: %v", err)
-	}
 
-	// 保存配置
-	port, _ := strconv.Atoi(ui.portEntry.Text)
 	ui.config.BluetoothMAC = ui.macEntry.Text
-	ui.config.Port = port
+	var newMappings []comm.ProxyMapping
+	for _, row := range ui.mappingRows {
+		lp, _ := strconv.Atoi(row.LocalPortEntry.Text)
+		if lp > 0 && row.RemoteAddrEntry.Text != "" {
+			newMappings = append(newMappings, comm.ProxyMapping{
+				LocalPort:  lp,
+				RemoteAddr: row.RemoteAddrEntry.Text,
+			})
+		}
+	}
+	if len(newMappings) < 0 {
+		return fmt.Errorf("至少需要一个映射地址")
+	}
+	ui.config.Mappings = newMappings
 	comm.SaveConfig(ui.config)
 
 	btRaw := comm.NewConnectBT(ui.macEntry.Text)
 	//多路复用
 	mux := comm.NewMuxManager(btRaw)
-	go comm.StartProxy(mux, fmt.Sprintf(":%d", port), "127.0.0.1:8023")
 
-	fmt.Printf("启动蓝牙代理: MAC=%s, Port=%d, AutoStart=%v\n",
-		ui.config.BluetoothMAC, ui.config.Port, ui.config.AutoStart)
+	for _, m := range ui.config.Mappings {
+		// 每个端口启动一个协程，共用一个 mux
+		go comm.StartProxy(mux, fmt.Sprintf(":%d", m.LocalPort), m.RemoteAddr)
+	}
+
+	fmt.Printf("启动蓝牙代理: MAC=%s, AutoStart=%v\n",
+		ui.config.BluetoothMAC, ui.config.AutoStart)
 	ui.startBtn.Text = "停止代理"
 	return nil
 }
@@ -237,7 +310,7 @@ func (ui *AppUI) Run() {
 		})
 	}
 	//自动启动
-	if ui.config.AutoStart {
+	if ui.config.AutoStart && ui.config.Mappings != nil {
 		ui.startProxy()
 	}
 	ui.window.ShowAndRun()
