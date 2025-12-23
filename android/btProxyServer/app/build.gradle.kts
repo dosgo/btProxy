@@ -11,7 +11,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.dosgo.bt2tcp"
+        applicationId = "com.dosgo.btProxy"
         minSdk = 24
         targetSdk = 36
         versionCode = 1

@@ -2,6 +2,7 @@ package com.dosgo.btProxy;
 
 import java.io.*;
 import java.net.*;
+import java.nio.ByteBuffer;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -14,13 +15,10 @@ public class BluetoothMuxHandler {
     // 用于管理逻辑流 ID (端口) 与本地 Socket 的映射
     private final ConcurrentHashMap<Integer, Socket> streamMap = new ConcurrentHashMap<>();
 
-    private String targetIp = "127.0.0.1";
-    private int targetPort = 8022;
-    public BluetoothMuxHandler(InputStream btIn, OutputStream btOut,String _targetIp,int _targetPort ) {
+
+    public BluetoothMuxHandler(InputStream btIn, OutputStream btOut ) {
         this.btIn = btIn;
         this.btOut = btOut;
-        this.targetIp=_targetIp;
-        this.targetPort=_targetPort;
     }
 
     /**
@@ -53,27 +51,37 @@ public class BluetoothMuxHandler {
     }
 
     private void handleStreamData(int id, byte[] data) {
-        Socket targetSocket = streamMap.get(id);
-        
-        // 如果是该 ID 的首个数据包，建立本地连接
-        if (targetSocket == null || targetSocket.isClosed()) {
-            try {
-                // 这里固定连接到本地 SSH 端口或其他服务
-                final Socket newSocket = new Socket(this.targetIp, this.targetPort);
-                streamMap.put(id, newSocket);
-                
-                // 启动反向传输：本地 Socket -> 蓝牙
-                startReverseBridge(id, newSocket);
-                targetSocket = newSocket;
-            } catch (IOException e) {
-                return;
-            }
-        }
+        //控制命令
+        if(id==0){
+            // 1. 使用 ByteBuffer 包装 payload
+            ByteBuffer bb = ByteBuffer.wrap(data);
+            // 2. 像点菜一样读取数据，自动处理字节序
+            int realId = bb.getShort() & 0xFFFF; // 读取 2 字节 ID
 
-        try {
-            targetSocket.getOutputStream().write(data);
-        } catch (IOException e) {
-            streamMap.remove(id);
+            // 3. 提取 4 字节 IP 并直接转为 InetAddress
+            byte[] ipBytes = new byte[4];
+            bb.get(ipBytes); // 读取接下来的 4 字节
+            try {
+                String ip = InetAddress.getByAddress(ipBytes).getHostAddress();
+                int port = bb.getShort() & 0xFFFF; // 读取 2 字节 Port
+                // 存入路由表
+                final Socket newSocket = new Socket(ip, port);
+                streamMap.put(realId, newSocket);
+                startReverseBridge(realId, newSocket);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            return;
+        }
+        //数据
+        Socket targetSocket = streamMap.get(id);
+        if(targetSocket!=null&& !targetSocket.isClosed()){
+            try {
+                targetSocket.getOutputStream().write(data);
+            } catch (IOException e) {
+                streamMap.remove(id);
+                try { targetSocket.close(); } catch (IOException ignored) {}
+            }
         }
     }
 

@@ -3,6 +3,8 @@ package comm
 import (
 	"encoding/binary"
 	"io"
+	"net"
+	"strconv"
 	"sync"
 )
 
@@ -47,12 +49,42 @@ func (m *MuxManager) readLoop() {
 }
 
 // OpenStream 是关键：它返回一个类似流的对象，侵入性极小
-func (m *MuxManager) OpenStream(id uint16) io.ReadWriteCloser {
+func (m *MuxManager) OpenStream(id uint16, remoteAddr string) io.ReadWriteCloser {
 	ch := make(chan []byte, 100)
 	m.mu.Lock()
 	m.streams[id] = ch
 	m.mu.Unlock()
+	host, portStr, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return nil
+	}
+	port, _ := strconv.Atoi(portStr)
+	ip := net.ParseIP(host).To4()
+	// 构造 8 字节的固定载荷
+	payload := make([]byte, 8)
+	binary.BigEndian.PutUint16(payload[0:2], id)                          // 本地端口,也就是id
+	binary.BigEndian.PutUint32(payload[2:6], binary.BigEndian.Uint32(ip)) // 目标IP
+	binary.BigEndian.PutUint16(payload[6:8], uint16(port))                // 目标端口
+	//包头的id是0表示新连接
+	if _, err := m.writePacket(0, payload); err != nil {
+		return nil
+	}
+
 	return &VirtualConn{id: id, manager: m, readCh: ch}
+}
+
+func (m *MuxManager) writePacket(id uint16, data []byte) (int, error) {
+	m.writeMu.Lock()
+	defer m.writeMu.Unlock()
+
+	// 高性能优化：使用固定数组减少内存分配
+	header := [4]byte{}
+	binary.BigEndian.PutUint16(header[0:2], id)
+	binary.BigEndian.PutUint16(header[2:4], uint16(len(data)))
+	if _, err := m.physical.Write(header[:]); err != nil {
+		return 0, err
+	}
+	return m.physical.Write(data)
 }
 
 // Closebt 关闭物理蓝牙连接
@@ -71,14 +103,8 @@ type VirtualConn struct {
 }
 
 func (v *VirtualConn) Write(p []byte) (int, error) {
-	v.manager.writeMu.Lock()
-	defer v.manager.writeMu.Unlock()
-	// 封装协议头：[ID][Len][Data]
-	header := []byte{byte(v.id >> 8), byte(v.id), byte(len(p) >> 8), byte(len(p))}
-	if _, err := v.manager.physical.Write(header); err != nil {
-		return 0, err
-	}
-	return v.manager.physical.Write(p)
+	//包头id大于0表示是数据包
+	return v.manager.writePacket(v.id, p)
 }
 
 func (v *VirtualConn) Read(p []byte) (int, error) {

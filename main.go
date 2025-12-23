@@ -17,7 +17,12 @@ func main() {
 	// 信号处理
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, os.Kill)
-	go comm.StartProxy(tcpPort, "94:d3:31:d3:04:f3")
+
+	btRaw := comm.NewConnectBT("94:d3:31:d3:04:f3")
+	//多路复用
+	mux := comm.NewMuxManager(btRaw)
+	defer mux.CloseBt()
+	go comm.StartProxy(mux, tcpPort, "127.0.0.1:8023")
 	<-sigChan
 	comm.StopProxy()
 }

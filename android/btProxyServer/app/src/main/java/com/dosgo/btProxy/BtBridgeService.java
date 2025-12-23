@@ -25,8 +25,7 @@ public class BtBridgeService extends Service {
     private static final String CHANNEL_ID = "BtBridgeChannel";
     private static final UUID MY_UUID = UUID.fromString("00001101-0000-1000-8000-00805f9b34fb"); // SPP UUID
     private BluetoothServerSocket serverSocket;
-    private String targetIp = "127.0.0.1";
-    private int targetPort = 8022;
+
     private boolean isRunning = true;
 
     @Override
@@ -53,9 +52,9 @@ public class BtBridgeService extends Service {
                 while (isRunning) {
                     BluetoothSocket btSocket = serverSocket.accept(); // 阻塞等待连接
                     updateNotification("蓝牙已连接，正在桥接 TCP...");
-                   // bridgeData(btSocket);
+
                     // 1. 实例化处理器
-                    BluetoothMuxHandler muxHandler = new BluetoothMuxHandler(btSocket.getInputStream(), btSocket.getOutputStream(),targetIp,targetPort);
+                    BluetoothMuxHandler muxHandler = new BluetoothMuxHandler(btSocket.getInputStream(), btSocket.getOutputStream());
 
                     // 2. 启动主循环（它会开启后台线程解析 Header）
                     muxHandler.start();
@@ -66,42 +65,7 @@ public class BtBridgeService extends Service {
         }).start();
     }
 
-    private void bridgeData(BluetoothSocket btSocket) {
-        new Thread(() -> {
-            try (Socket tcpSocket = new Socket(targetIp, targetPort)) { // 假设 SSH 在 8022
-                InputStream btIn = btSocket.getInputStream();
-                OutputStream btOut = btSocket.getOutputStream();
-                InputStream tcpIn = tcpSocket.getInputStream();
-                OutputStream tcpOut = tcpSocket.getOutputStream();
 
-                // 启动两个方向的转发
-                Thread t1 = new Thread(() -> pipe(btIn, tcpOut));
-                Thread t2 = new Thread(() -> pipe(tcpIn, btOut));
-
-                t1.start();
-                t2.start();
-
-                t1.join();
-                t2.join();
-            } catch (Exception e) {
-                e.printStackTrace();
-            } finally {
-                try { btSocket.close(); } catch (IOException ignored) {}
-                updateNotification("连接已断开，等待新连接...");
-            }
-        }).start();
-    }
-
-    private void pipe(InputStream in, OutputStream out) {
-        byte[] buffer = new byte[8192];
-        int len;
-        try {
-            while ((len = in.read(buffer)) != -1) {
-                out.write(buffer, 0, len);
-                out.flush();
-            }
-        } catch (IOException ignored) {}
-    }
 
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -140,11 +104,6 @@ public class BtBridgeService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-
-        if (intent != null) {
-            targetIp = intent.getStringExtra("target_ip");
-            targetPort = intent.getIntExtra("target_port", 8022);
-        }
         return START_STICKY;
     }
 

@@ -5,31 +5,8 @@
     android:orientation="vertical"
     android:padding="20dp">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="目标 IP 地址 (通常为 127.0.0.1)" />
 
-    <EditText
-        android:id="@+id/edit_ip"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="127.0.0.1"
-        android:hint="127.0.0.1" />
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
-        android:text="目标 端口号" />
-
-    <EditText
-        android:id="@+id/edit_port"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:inputType="number"
-        android:text="8022"
-        android:hint="8022" />
 
     <Button
         android:id="@+id/btn_start"

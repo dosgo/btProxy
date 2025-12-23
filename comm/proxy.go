@@ -1,6 +1,7 @@
 package comm
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -9,7 +10,7 @@ import (
 
 var stopChan chan struct{}
 
-func StartProxy(tcpPort string, btAddr string) {
+func StartProxy(mux *MuxManager, tcpPort string, remoteAddr string) {
 	// 启动 TCP 服务器
 	listener, err := net.Listen("tcp", tcpPort)
 	if err != nil {
@@ -19,11 +20,7 @@ func StartProxy(tcpPort string, btAddr string) {
 
 	log.Printf("TCP服务器启动在 %s，等待连接...", tcpPort)
 
-	btRaw := NewConnectBT(btAddr)
 	stopChan = make(chan struct{})
-	//多路复用
-	mux := NewMuxManager(btRaw)
-	defer mux.CloseBt()
 
 	for {
 		select {
@@ -43,7 +40,7 @@ func StartProxy(tcpPort string, btAddr string) {
 			}
 			log.Printf("客户端连接: %s", tcpConn.RemoteAddr())
 			// 处理连接
-			go handleConnection(tcpConn, mux)
+			go handleConnection(tcpConn, mux, remoteAddr)
 		}
 	}
 }
@@ -53,12 +50,16 @@ func StopProxy() {
 	}
 }
 
-func handleConnection(tcpConn net.Conn, mux *MuxManager) {
+func handleConnection(tcpConn net.Conn, mux *MuxManager, toAddr string) {
 	defer tcpConn.Close()
 
 	remoteAddr := tcpConn.RemoteAddr().(*net.TCPAddr)
 	portID := uint16(remoteAddr.Port)
-	serialPort := mux.OpenStream(portID)
+	serialPort := mux.OpenStream(portID, toAddr)
+	if serialPort == nil {
+		fmt.Println("无法打开流")
+		return
+	}
 	defer serialPort.Close()
 	// TCP → 串口
 	go func() {
@@ -66,7 +67,6 @@ func handleConnection(tcpConn net.Conn, mux *MuxManager) {
 		if err != nil {
 			log.Printf("TCP→串口转发错误: %v", err)
 		}
-
 	}()
 
 	_, err := io.Copy(tcpConn, serialPort)

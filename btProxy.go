@@ -172,7 +172,11 @@ func (ui *AppUI) startProxy() error {
 	ui.config.Port = port
 	comm.SaveConfig(ui.config)
 
-	go comm.StartProxy(fmt.Sprintf(":%d", port), ui.macEntry.Text)
+	btRaw := comm.NewConnectBT(ui.macEntry.Text)
+	//多路复用
+	mux := comm.NewMuxManager(btRaw)
+	go comm.StartProxy(mux, fmt.Sprintf(":%d", port), "127.0.0.1:8023")
+
 	fmt.Printf("启动蓝牙代理: MAC=%s, Port=%d, AutoStart=%v\n",
 		ui.config.BluetoothMAC, ui.config.Port, ui.config.AutoStart)
 	ui.startBtn.Text = "停止代理"

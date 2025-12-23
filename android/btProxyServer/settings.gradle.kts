@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "bt2tcp"
+rootProject.name = "btProxyServer"
 include(":app")
  
