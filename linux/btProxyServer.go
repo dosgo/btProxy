@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 )
@@ -26,12 +27,15 @@ func (p *BluetoothProfile) NewConnection(device dbus.ObjectPath, fd dbus.UnixFD,
 	fmt.Printf("收到新连接，来自设备: %s\n", device)
 
 	// 将 UnixFD 转换为 Go 的 os.File，进而转为 net.Conn
-	file := os.NewFile(uintptr(fd), "rfcomm-socket")
-	conn, err := net.FileConn(file)
-	if err != nil {
-		fmt.Printf("无法创建连接对象: %v\n", err)
-		return dbus.MakeFailedError(err)
-	}
+	//file := os.NewFile(uintptr(fd), "rfcomm-socket")
+	//conn, err := net.FileConn(file)
+
+	conn := NewBluetoothConn(fd)
+
+//	if err != nil {
+	//	fmt.Printf("fd:%d无法创建连接对象: %v \n",fd, err)
+	//	return dbus.MakeFailedError(err)
+//	}
 
 	// 异步处理桥接逻辑，不要阻塞 D-Bus 回调线程
 	go handleBridge(conn)
@@ -97,3 +101,74 @@ func main() {
 	fmt.Println("正在注销服务...")
 	obj.Call("org.bluez.ProfileManager1.UnregisterProfile", 0, dbus.ObjectPath(PROFILE_OBJ_PATH))
 }
+
+
+
+// BluetoothConn 实现 net.Conn 接口的蓝牙连接
+type BluetoothConn struct {
+    fd   dbus.UnixFD
+    file *os.File
+}
+
+// NewBluetoothConn 创建蓝牙连接
+func NewBluetoothConn(fd dbus.UnixFD) *BluetoothConn {
+    file := os.NewFile(uintptr(fd), "bluetooth-socket")
+    return &BluetoothConn{
+        fd:   fd,
+        file: file,
+    }
+}
+
+// Read 实现 io.Reader
+func (c *BluetoothConn) Read(b []byte) (n int, err error) {
+    return c.file.Read(b)
+}
+
+// Write 实现 io.Writer
+func (c *BluetoothConn) Write(b []byte) (n int, err error) {
+    return c.file.Write(b)
+}
+
+// Close 实现 io.Closer
+func (c *BluetoothConn) Close() error {
+    if c.file != nil {
+        return c.file.Close()
+    }
+   // return syscall.Close(c.fd)
+   return nil
+}
+
+// LocalAddr 返回本地地址（蓝牙连接无此概念）
+func (c *BluetoothConn) LocalAddr() net.Addr {
+    return &BluetoothAddr{Address: "local-bluetooth"}
+}
+
+// RemoteAddr 返回远程地址
+func (c *BluetoothConn) RemoteAddr() net.Addr {
+    return &BluetoothAddr{Address: "remote-bluetooth"}
+}
+
+// SetDeadline 设置截止时间
+func (c *BluetoothConn) SetDeadline(t time.Time) error {
+    // 对于蓝牙连接，可能需要特殊处理
+    return nil // 或不实现
+}
+
+// SetReadDeadline 设置读截止时间
+func (c *BluetoothConn) SetReadDeadline(t time.Time) error {
+    return nil
+}
+
+// SetWriteDeadline 设置写截止时间
+func (c *BluetoothConn) SetWriteDeadline(t time.Time) error {
+    return nil
+}
+
+// BluetoothAddr 蓝牙地址实现
+type BluetoothAddr struct {
+    Address string
+}
+
+func (a *BluetoothAddr) Network() string { return "bluetooth" }
+func (a *BluetoothAddr) String() string    { return a.Address }
+

@@ -50,7 +50,6 @@ func (h *BluetoothMuxHandler) Start() {
 				// 解析头部
 				id := binary.BigEndian.Uint16(header[0:2])
 				length := binary.BigEndian.Uint16(header[2:4])
-
 				// 2. 读取 Payload 数据
 				payload := make([]byte, length)
 				if length > 0 {
@@ -84,14 +83,12 @@ func (h *BluetoothMuxHandler) handleStreamData(id uint16, data []byte) {
 		// 构建 IP 地址字符串
 		ipStr := fmt.Sprintf("%d.%d.%d.%d", ipBytes[0], ipBytes[1], ipBytes[2], ipBytes[3])
 		addr := fmt.Sprintf("%s:%d", ipStr, port)
-
 		// 建立 TCP 连接
 		conn, err := net.Dial("tcp", addr)
 		if err != nil {
 			fmt.Printf("建立TCP连接失败: %v\n", err)
 			return
 		}
-
 		// 存入路由表
 		h.streamMap.Store(realID, conn)
 
@@ -119,11 +116,11 @@ func (h *BluetoothMuxHandler) startReverseBridge(id uint16, conn net.Conn) {
 		h.streamMap.Delete(id)
 		conn.Close()
 	}()
-
 	buffer := make([]byte, 1024*4)
 	for {
 		select {
 		case <-h.closeChan:
+			fmt.Printf("closeChan....\r\n")
 			return
 		default:
 			// 设置读取超时，避免阻塞无法退出
@@ -141,7 +138,6 @@ func (h *BluetoothMuxHandler) startReverseBridge(id uint16, conn net.Conn) {
 				}
 				return
 			}
-
 			if n > 0 {
 				// 发送数据帧
 				if err := h.sendFrame(id, buffer[:n]); err != nil {
