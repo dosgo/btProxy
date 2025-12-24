@@ -5,10 +5,11 @@ import (
 	"io"
 	"log"
 	"net"
+	"sync"
 	"time"
 )
 
-var stopChan chan struct{}
+var stopChans sync.Map
 
 func StartProxy(mux *MuxManager, tcpPort string, remoteAddr string) {
 	// 启动 TCP 服务器
@@ -19,8 +20,8 @@ func StartProxy(mux *MuxManager, tcpPort string, remoteAddr string) {
 	defer listener.Close()
 
 	log.Printf("TCP服务器启动在 %s，等待连接...", tcpPort)
-
-	stopChan = make(chan struct{})
+	stopChan := make(chan struct{})
+	stopChans.Store(tcpPort, stopChan)
 
 	for {
 		select {
@@ -44,9 +45,9 @@ func StartProxy(mux *MuxManager, tcpPort string, remoteAddr string) {
 		}
 	}
 }
-func StopProxy() {
-	if stopChan != nil {
-		close(stopChan)
+func StopProxy(tcpPort string) {
+	if value, ok := stopChans.Load(tcpPort); ok {
+		close(value.(chan struct{}))
 	}
 }
 

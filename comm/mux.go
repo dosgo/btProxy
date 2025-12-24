@@ -12,10 +12,11 @@ import (
 
 // MuxManager 负责管理那个唯一的蓝牙物理连接
 type MuxManager struct {
-	physical io.ReadWriteCloser
-	streams  map[uint16]chan []byte // 每个ID对应一个数据管道
-	mu       sync.RWMutex
-	writeMu  sync.Mutex // 物理写锁，保证Header和Data不被拆散
+	physical        io.ReadWriteCloser
+	streams         map[uint16]chan []byte // 每个ID对应一个数据管道
+	streamsLastTime sync.Map
+	mu              sync.RWMutex
+	writeMu         sync.Mutex // 物理写锁，保证Header和Data不被拆散
 }
 
 func NewMuxManager(p io.ReadWriteCloser) *MuxManager {
@@ -24,6 +25,7 @@ func NewMuxManager(p io.ReadWriteCloser) *MuxManager {
 		streams:  make(map[uint16]chan []byte),
 	}
 	go m.readLoop() // 启动后台“拆包”协程
+	go m.checkActive()
 	return m
 }
 
@@ -32,18 +34,22 @@ func (m *MuxManager) readLoop() {
 	header := make([]byte, 4) // 1字节ID + 2字节长度
 	for {
 		if _, err := io.ReadFull(m.physical, header); err != nil {
-			return
+			fmt.Printf("Mux读取头部失败: %v，等待重试...\n", err)
+			time.Sleep(time.Second * 1)
+			continue // 不要 return，继续循环等待 ConnectBT 重连成功
 		}
 
 		id := binary.BigEndian.Uint16(header[0:2])
 		dataLen := binary.BigEndian.Uint16(header[2:4])
 		payload := make([]byte, dataLen)
 		if _, err := io.ReadFull(m.physical, payload); err != nil {
-			return
+			fmt.Printf("Mux读取载荷失败: %v\n", err)
+			continue
 		}
 
 		m.mu.RLock()
 		if ch, ok := m.streams[id]; ok {
+			m.streamsLastTime.Store(id, time.Now().Unix())
 			select {
 			case ch <- payload:
 				// 成功
@@ -92,7 +98,28 @@ func (m *MuxManager) writePacket(id uint16, data []byte) (int, error) {
 	if _, err := m.physical.Write(header[:]); err != nil {
 		return 0, err
 	}
+	m.streamsLastTime.Store(id, time.Now().Unix())
 	return m.physical.Write(data)
+}
+
+func (m *MuxManager) checkActive() {
+
+	for {
+		m.mu.Lock()
+		for id := range m.streams {
+			if value, ok := m.streamsLastTime.Load(id); ok {
+				lastTime := value.(int64)
+				if lastTime+120 < time.Now().Unix() && lastTime > 0 {
+					if ch, ok := m.streams[id]; ok {
+						close(ch)
+						delete(m.streams, id)
+					}
+				}
+			}
+		}
+		m.mu.Unlock()
+		time.Sleep(time.Second * 30)
+	}
 }
 
 // Closebt 关闭物理蓝牙连接
@@ -124,12 +151,11 @@ func (v *VirtualConn) Read(p []byte) (int, error) {
 }
 
 func (v *VirtualConn) Close() error {
-
 	v.manager.mu.Lock()
 	if _, ok := v.manager.streams[v.id]; ok {
 		delete(v.manager.streams, v.id)
+		close(v.readCh)
 	}
 	v.manager.mu.Unlock()
-	close(v.readCh)
 	return nil
 }

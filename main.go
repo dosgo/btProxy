@@ -24,5 +24,5 @@ func main() {
 	defer mux.CloseBt()
 	go comm.StartProxy(mux, tcpPort, "127.0.0.1:8023")
 	<-sigChan
-	comm.StopProxy()
+	comm.StopProxy(tcpPort)
 }

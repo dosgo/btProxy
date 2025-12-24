@@ -212,7 +212,10 @@ func (ui *AppUI) addMappingRow(port, addr string) {
 }
 
 func (ui *AppUI) stopProxy() error {
-	comm.StopProxy()
+	for _, m := range ui.config.Mappings {
+		// 每个端口启动一个协程，共用一个 mux
+		go comm.StopProxy(fmt.Sprintf(":%d", m.LocalPort))
+	}
 	ui.startBtn.Text = "启动代理"
 	return nil
 }
