@@ -95,20 +95,14 @@ public class BluetoothMuxHandler {
     private void startReverseBridge(final int id, final Socket socket) {
         new Thread(() -> {
             try (InputStream in = socket.getInputStream()) {
-                byte[] buffer = new byte[256*1];
+                byte[] buffer = new byte[1024*1];
                 int n;
                 while ((n = in.read(buffer)) != -1) {
-
                     sendFrame(id, buffer, n);
-                    if(n==256) {
-                        Thread.sleep(20);
-                    }
                 }
             } catch (IOException e) {
                 e.printStackTrace();
                 // 错误处理
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
             } finally {
                 streamMap.remove(id);
                 try { socket.close(); } catch (IOException ignored) {}
