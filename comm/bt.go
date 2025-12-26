@@ -1,6 +1,8 @@
 package comm
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -54,6 +56,11 @@ type ConnectBT struct {
 
 // 你的原始连接逻辑封装
 func (a *ConnectBT) connect() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.conn != nil {
+		return nil
+	}
 	btRaw, err := connectByAddr(a.macAddrStr)
 	if err != nil {
 		return err
@@ -64,60 +71,52 @@ func (a *ConnectBT) connect() error {
 
 // 实现 io.Reader
 func (a *ConnectBT) Read(p []byte) (n int, err error) {
-	for {
-		a.mu.Lock()
-		currConn := a.conn
-		a.mu.Unlock()
 
-		if currConn != nil {
-			//	currConn.SetReadDeadline(time.Now().Add(5 * time.Second))
-			n, err = currConn.Read(p)
-			if err == nil || err == io.EOF {
-				return n, err
-			}
+	a.mu.Lock()
+	currConn := a.conn
+	a.mu.Unlock()
+	if currConn != nil {
+		//	currConn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		n, err = currConn.Read(p)
+		fmt.Printf("Read Len:%d n:%d\r\n", len(p), n)
+		if err != nil {
 			log.Printf("蓝牙读取失败: %v, 准备重连...", err)
 			currConn.Close()
+			a.mu.Lock()
 			a.conn = nil
-		}
+			a.mu.Unlock()
 
-		// 执行重连逻辑
-		if err := a.reconnect(); err != nil {
-			time.Sleep(1 * time.Second) // 重连失败避退
-			continue
 		}
+		return n, err
 	}
+	a.reconnect()
+	return 0, errors.New("蓝牙未连接，读取失败")
+
 }
 
 // 实现 io.Writer
 func (a *ConnectBT) Write(p []byte) (n int, err error) {
-	for {
-		a.mu.Lock()
-		currConn := a.conn
-		a.mu.Unlock()
-
-		if currConn != nil {
-			currConn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-			n, err = currConn.Write(p)
-			if err == nil {
-				return n, nil
-			}
+	a.mu.Lock()
+	currConn := a.conn
+	a.mu.Unlock()
+	if currConn != nil {
+		currConn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		n, err = currConn.Write(p)
+		if err != nil {
 			log.Printf("蓝牙写入失败: %v, 准备重连...", err)
 			currConn.Close()
+			a.mu.Lock()
 			a.conn = nil
+			a.mu.Unlock()
 		}
-
-		if err := a.reconnect(); err != nil {
-			time.Sleep(1 * time.Second)
-			continue
-		}
+		return n, err
 	}
+	a.reconnect()
+	return 0, errors.New("蓝牙未连接，写入失败")
 }
 
 // 内部重连方法
 func (a *ConnectBT) reconnect() error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	log.Printf("正在尝试重连到蓝牙: %s", a.macAddrStr)
 	err := a.connect()
 	if err != nil {

@@ -2,7 +2,10 @@ package comm
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -49,4 +52,96 @@ func connectByAddr(macAddrStr string) (ReadWriteCloseWithDeadline, error) {
 	// 4. 将句柄封装为 Go 文件对象
 	rw := os.NewFile(uintptr(fd), "bt_socket")
 	return rw, nil
+	//return &RawBtSocket{fd: fd}, nil
+}
+
+type RawBtSocket struct {
+	fd windows.Handle
+}
+
+func (s *RawBtSocket) Read(p []byte) (int, error) {
+	if s.fd == windows.InvalidHandle {
+		return 0, io.EOF
+	}
+
+	// 构造 windows.Buf 供 syscall 使用
+	var buf windows.WSABuf
+	buf.Len = uint32(len(p))
+	if buf.Len == 0 {
+		return 0, nil
+	}
+	buf.Buf = &p[0]
+
+	var done uint32
+	var flags uint32
+	// 调用 WSARecv，这是 Windows 处理 Socket 读取最底层的推荐方式
+	err := windows.WSARecv(windows.Handle(s.fd), &buf, 1, &done, &flags, nil, nil)
+	if err != nil {
+		// 如果返回 WSAEWOULDBLOCK，说明暂时没数据
+		if err == windows.WSAEWOULDBLOCK {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	// 如果 done 为 0，代表对端关闭了连接
+	if done == 0 {
+		return 0, io.EOF
+	}
+
+	return int(done), nil
+}
+
+func (s *RawBtSocket) Write(p []byte) (int, error) {
+	if s.fd == windows.InvalidHandle {
+		return 0, syscall.EINVAL
+	}
+
+	var totalSent int
+	for totalSent < len(p) {
+		var done uint32
+		var buf windows.WSABuf
+		remaining := p[totalSent:]
+		buf.Len = uint32(len(remaining))
+		buf.Buf = &remaining[0]
+
+		// 调用 WSASend，确保它是按照 Socket 协议发送
+		err := windows.WSASend(windows.Handle(s.fd), &buf, 1, &done, 0, nil, nil)
+		if err != nil {
+			if err == windows.WSAEWOULDBLOCK {
+				// 缓冲区满了，稍微等一下
+				continue
+			}
+			return totalSent, err
+		}
+
+		if done == 0 {
+			return totalSent, io.ErrUnexpectedEOF
+		}
+		totalSent += int(done)
+	}
+	return totalSent, nil
+}
+
+func (s *RawBtSocket) Close() error {
+	if s.fd != windows.InvalidHandle {
+		windows.Closesocket(s.fd)
+		s.fd = windows.InvalidHandle
+	}
+	return nil
+}
+
+// 模拟 Deadline (可选，蓝牙 Socket 建议用 SetSockOpt 设置超时)
+func (s *RawBtSocket) SetReadDeadline(t time.Time) error {
+	// 实际上可以通过 windows.SetsockoptInt 设置 SO_RCVTIMEO
+	return nil
+}
+func (s *RawBtSocket) SetDeadline(t time.Time) error {
+	// 实际上可以通过 windows.SetsockoptInt 设置 SO_RCVTIMEO
+	return nil
+}
+
+func (s *RawBtSocket) SetWriteDeadline(t time.Time) error {
+	// 实际上可以通过 windows.SetsockoptInt 设置 SO_RCVTIMEO
+	return nil
 }

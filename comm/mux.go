@@ -42,6 +42,7 @@ func (m *MuxManager) readLoop() {
 		id := binary.BigEndian.Uint16(header[0:2])
 		dataLen := binary.BigEndian.Uint16(header[2:4])
 		payload := make([]byte, dataLen)
+		fmt.Printf("id:%d dataLen:%d payloadLen:%d\r\n", id, dataLen, len(payload))
 		if _, err := io.ReadFull(m.physical, payload); err != nil {
 			fmt.Printf("Mux读取载荷失败: %v\n", err)
 			continue
@@ -53,9 +54,9 @@ func (m *MuxManager) readLoop() {
 			select {
 			case ch <- payload:
 				// 成功
-			case <-time.After(time.Millisecond * 500):
+			case <-time.After(time.Millisecond * 200):
 				// 半秒钟还没发进去，说明这个流彻底堵死了，关闭或记录错误
-				fmt.Printf("警告: 流 %d 阻塞超时，丢弃数据包\n", id)
+				fmt.Printf("警告: 流 %d 阻塞超时，丢弃数据包\r\n", id)
 			}
 		}
 		m.mu.RUnlock()
@@ -73,12 +74,27 @@ func (m *MuxManager) OpenStream(id uint16, remoteAddr string) io.ReadWriteCloser
 		return nil
 	}
 	port, _ := strconv.Atoi(portStr)
-	ip := net.ParseIP(host).To4()
-	// 构造 8 字节的固定载荷
-	payload := make([]byte, 8)
-	binary.BigEndian.PutUint16(payload[0:2], id)                          // 本地端口,也就是id
-	binary.BigEndian.PutUint32(payload[2:6], binary.BigEndian.Uint32(ip)) // 目标IP
-	binary.BigEndian.PutUint16(payload[6:8], uint16(port))                // 目标端口
+	// 解析 IP 地址
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return nil
+	}
+	var payload []byte
+	// 判断是 IPv4 还是 IPv6
+	if ip4 := ip.To4(); ip4 != nil {
+		// IPv4: 2(id) + 4(ip) + 2(port) = 8 bytes
+		payload = make([]byte, 8)
+		binary.BigEndian.PutUint16(payload[0:2], id)
+		copy(payload[2:6], ip4)
+		binary.BigEndian.PutUint16(payload[6:8], uint16(port))
+	} else {
+		// IPv6: 2(id) + 16(ip) + 2(port) = 20 bytes (注：有些协议习惯对齐，这里按实长 20 字节)
+		payload = make([]byte, 20)
+		binary.BigEndian.PutUint16(payload[0:2], id)
+		copy(payload[2:18], ip.To16())
+		binary.BigEndian.PutUint16(payload[18:20], uint16(port))
+	}
+
 	//包头的id是0表示新连接
 	if _, err := m.writePacket(0, payload); err != nil {
 		return nil
@@ -99,6 +115,7 @@ func (m *MuxManager) writePacket(id uint16, data []byte) (int, error) {
 		return 0, err
 	}
 	m.streamsLastTime.Store(id, time.Now().Unix())
+
 	return m.physical.Write(data)
 }
 
@@ -111,6 +128,7 @@ func (m *MuxManager) checkActive() {
 				lastTime := value.(int64)
 				if lastTime+120 < time.Now().Unix() && lastTime > 0 {
 					if ch, ok := m.streams[id]; ok {
+						fmt.Printf("close id:%d\r\n", id)
 						close(ch)
 						delete(m.streams, id)
 					}
@@ -131,9 +149,10 @@ func (m *MuxManager) CloseBt() {
 
 // VirtualConn 实现了 io.ReadWriteCloser，业务代码可以直接 io.Copy 它
 type VirtualConn struct {
-	id      uint16
-	manager *MuxManager
-	readCh  chan []byte
+	id       uint16
+	manager  *MuxManager
+	readCh   chan []byte
+	cacheBuf []byte // 新增：用于暂存未读完的数据
 }
 
 func (v *VirtualConn) Write(p []byte) (int, error) {
@@ -142,11 +161,27 @@ func (v *VirtualConn) Write(p []byte) (int, error) {
 }
 
 func (v *VirtualConn) Read(p []byte) (int, error) {
+	// 1. 如果上次还有残留数据，先读残留的
+	if len(v.cacheBuf) > 0 {
+		n := copy(p, v.cacheBuf)
+		v.cacheBuf = v.cacheBuf[n:]
+		fmt.Printf("1111\r\n")
+		return n, nil
+	}
+
+	// 2. 阻塞等待新数据
 	data, ok := <-v.readCh
 	if !ok {
 		return 0, io.EOF
 	}
+
+	// 3. 拷贝数据
 	n := copy(p, data)
+	// 4. 如果 p 装不下，把剩下的存入 v.buf
+	if n < len(data) {
+		v.cacheBuf = append(v.cacheBuf, data[n:]...)
+		fmt.Printf("eeee\r\n")
+	}
 	return n, nil
 }
 

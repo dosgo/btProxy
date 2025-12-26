@@ -58,8 +58,11 @@ public class BluetoothMuxHandler {
             // 2. 像点菜一样读取数据，自动处理字节序
             int realId = bb.getShort() & 0xFFFF; // 读取 2 字节 ID
 
-            // 3. 提取 4 字节 IP 并直接转为 InetAddress
-            byte[] ipBytes = new byte[4];
+            // 3.ipv6 ipv4
+            int ipSize = (data.length == 20) ? 16 : 4;
+
+            byte[] ipBytes = new byte[ipSize];
+
             bb.get(ipBytes); // 读取接下来的 4 字节
             try {
                 String ip = InetAddress.getByAddress(ipBytes).getHostAddress();
@@ -79,6 +82,7 @@ public class BluetoothMuxHandler {
             try {
                 targetSocket.getOutputStream().write(data);
             } catch (IOException e) {
+                e.printStackTrace();
                 streamMap.remove(id);
                 try { targetSocket.close(); } catch (IOException ignored) {}
             }
@@ -91,13 +95,20 @@ public class BluetoothMuxHandler {
     private void startReverseBridge(final int id, final Socket socket) {
         new Thread(() -> {
             try (InputStream in = socket.getInputStream()) {
-                byte[] buffer = new byte[1024 * 4];
+                byte[] buffer = new byte[256*1];
                 int n;
                 while ((n = in.read(buffer)) != -1) {
+
                     sendFrame(id, buffer, n);
+                    if(n==256) {
+                        Thread.sleep(20);
+                    }
                 }
             } catch (IOException e) {
+                e.printStackTrace();
                 // 错误处理
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
             } finally {
                 streamMap.remove(id);
                 try { socket.close(); } catch (IOException ignored) {}
@@ -110,14 +121,20 @@ public class BluetoothMuxHandler {
      * 使用 synchronized 保证物理写入的原子性，防止多线程写入导致包头交织
      */
     private synchronized void sendFrame(int id, byte[] data, int len) throws IOException {
-        byte[] header = new byte[4];
-        header[0] = (byte) (id >> 8);
-        header[1] = (byte) id;
-        header[2] = (byte) (len >> 8);
-        header[3] = (byte) len;
+        byte[] frame = new byte[4 + len];
+        ByteBuffer bb = ByteBuffer.wrap(frame);
+        System.out.println("sendFrame len:"+len);
 
-        btOut.write(header);
-        btOut.write(data, 0, len);
+        // 2. 显式设置大端序 (Big Endian)
+        bb.order(java.nio.ByteOrder.BIG_ENDIAN);
+
+        // 3. 写入 2 字节 ID 和 2 字节 长度
+        bb.putShort((short) id);
+        bb.putShort((short) len);
+
+        // 4. 写入剩余的数据载荷
+        bb.put(data, 0, len);
+        btOut.write(frame);
         btOut.flush();
     }
 

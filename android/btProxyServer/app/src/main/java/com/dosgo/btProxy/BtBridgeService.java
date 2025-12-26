@@ -47,12 +47,11 @@ public class BtBridgeService extends Service {
                     System.out.println("startBridgeThread err\r\n");
                     return;
                 }
-                serverSocket = adapter.listenUsingInsecureRfcommWithServiceRecord("SerialPort", MY_UUID);
+                serverSocket = adapter.listenUsingRfcommWithServiceRecord("SerialPort", MY_UUID);
 
                 while (isRunning) {
                     BluetoothSocket btSocket = serverSocket.accept(); // 阻塞等待连接
                     updateNotification("蓝牙已连接，正在桥接 TCP...");
-
                     // 1. 实例化处理器
                     BluetoothMuxHandler muxHandler = new BluetoothMuxHandler(btSocket.getInputStream(), btSocket.getOutputStream());
 
