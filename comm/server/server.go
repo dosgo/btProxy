@@ -77,12 +77,24 @@ func (h *BluetoothMuxHandler) handleStreamData(id uint16, data []byte) {
 
 		// 解析控制命令
 		realID := binary.BigEndian.Uint16(data[0:2])
-		ipBytes := data[2:6]
-		port := binary.BigEndian.Uint16(data[6:8])
+		var addr string
+		//ipv6
+		if(len(data)==20){
+			ipBytes := data[2:18]
+			port := binary.BigEndian.Uint16(data[18:20])
+			// 构建 IPv6 地址
+			ip := net.IP(ipBytes)
+			// IPv6地址需要方括号括起来
+			addr = fmt.Sprintf("[%s]:%d", ip.String(), port)
+		}else{
+			ipBytes := data[2:6]
+			port := binary.BigEndian.Uint16(data[6:8])
+			// 构建 IP 地址字符串
+			ipStr := fmt.Sprintf("%d.%d.%d.%d", ipBytes[0], ipBytes[1], ipBytes[2], ipBytes[3])
+			addr = fmt.Sprintf("%s:%d", ipStr, port)
+		}
 
-		// 构建 IP 地址字符串
-		ipStr := fmt.Sprintf("%d.%d.%d.%d", ipBytes[0], ipBytes[1], ipBytes[2], ipBytes[3])
-		addr := fmt.Sprintf("%s:%d", ipStr, port)
+		
 		// 建立 TCP 连接
 		conn, err := net.Dial("tcp", addr)
 		if err != nil {
