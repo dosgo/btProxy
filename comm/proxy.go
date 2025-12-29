@@ -154,17 +154,13 @@ func handleSocksConnection(conn net.Conn, mux *MuxManager) {
 	conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
 
 	// --- 4. 双向转发 ---
-	done := make(chan struct{})
+
 	go func() {
 		io.Copy(serialPort, conn)
-		done <- struct{}{}
-	}()
-	go func() {
-		io.Copy(conn, serialPort)
-		done <- struct{}{}
 	}()
 
-	<-done
+	io.Copy(conn, serialPort)
+
 	localAddr := conn.RemoteAddr().(*net.TCPAddr)
 	log.Printf("SOCKS5 代理流关闭: %s -> %s:%d", localAddr, destAddr, destPort)
 }

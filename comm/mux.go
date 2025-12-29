@@ -122,7 +122,6 @@ func (m *MuxManager) OpenStream(remoteAddr string) io.ReadWriteCloser {
 	if _, err := m.writePacket(0, payload.Bytes()); err != nil {
 		return nil
 	}
-
 	return &VirtualConn{id: id, manager: m, readCh: ch}
 }
 
