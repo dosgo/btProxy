@@ -77,26 +77,38 @@ func (h *BluetoothMuxHandler) handleStreamData(id uint16, data []byte) {
 
 		// 解析控制命令
 		realID := binary.BigEndian.Uint16(data[0:2])
-		var addr string
-		//ipv6
-		if(len(data)==20){
-			ipBytes := data[2:18]
-			port := binary.BigEndian.Uint16(data[18:20])
-			// 构建 IPv6 地址
-			ip := net.IP(ipBytes)
-			// IPv6地址需要方括号括起来
-			addr = fmt.Sprintf("[%s]:%d", ip.String(), port)
-		}else{
-			ipBytes := data[2:6]
-			port := binary.BigEndian.Uint16(data[6:8])
-			// 构建 IP 地址字符串
-			ipStr := fmt.Sprintf("%d.%d.%d.%d", ipBytes[0], ipBytes[1], ipBytes[2], ipBytes[3])
-			addr = fmt.Sprintf("%s:%d", ipStr, port)
-		}
+		// 2. 解析 Flag (1字节)
+		flag := data[2]
 
-		
+		var host string
+		var portOffset int
+
+		// 3. 根据 Flag 分支解析地址
+		switch flag {
+		case 0x01: // IPv4 (4字节)
+			host = net.IP(data[3:7]).String()
+			portOffset = 7
+		case 0x02: // IPv6 (16字节)
+			host = net.IP(data[3:19]).String()
+			portOffset = 19
+		case 0x03: // 域名 (变长)
+			// 注意：Java端用了 data.length-5 计算长度
+			// 这里我们直接截取 Flag 之后、Port 之前的所有字节作为域名
+			domainLen := len(data) - 5
+			host = string(data[3 : 3+domainLen])
+			portOffset = 3 + domainLen
+		default:
+			fmt.Printf("未知的地址类型标识: %d\n", flag)
+			return
+		}
+		port := binary.BigEndian.Uint16(data[portOffset : portOffset+2])
+
+		// 5. 构建标准地址并拨号
+		// 使用 net.JoinHostPort 自动处理 IPv6 的中括号问题
+		addr := net.JoinHostPort(host, fmt.Sprintf("%d", port))
+
 		// 建立 TCP 连接
-		conn, err := net.Dial("tcp", addr)
+		conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 		if err != nil {
 			fmt.Printf("建立TCP连接失败: %v\n", err)
 			return
