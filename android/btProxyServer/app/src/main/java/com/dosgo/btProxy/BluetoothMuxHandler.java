@@ -29,7 +29,7 @@ public class BluetoothMuxHandler {
         new Thread(() -> {
             try {
                 byte[] header = new byte[4];
-                byte[] payload = new byte[1024*5];
+                byte[] payload = new byte[1024*33];
                 while (true) {
                     // 1. 读取 4 字节头部
                     readFull(btIn, header,4);
@@ -39,6 +39,7 @@ public class BluetoothMuxHandler {
                     // 2. 读取 Payload 数据
                    // byte[] payload = new byte[len];
                     if (len > 0) {
+                        
                         readFull(btIn, payload,len);
                     }
 
@@ -110,7 +111,7 @@ public class BluetoothMuxHandler {
     private void startReverseBridge(final int id, final Socket socket) {
         new Thread(() -> {
             try (InputStream in = socket.getInputStream()) {
-                byte[] buffer = new byte[1024*1];
+                byte[] buffer = new byte[1024*8];
                 int n;
                 while ((n = in.read(buffer)) != -1) {
                     sendFrame(id, buffer, n);

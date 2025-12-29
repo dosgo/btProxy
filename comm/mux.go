@@ -53,7 +53,7 @@ func (m *MuxManager) readLoop() {
 
 		id := binary.BigEndian.Uint16(header[0:2])
 		dataLen := binary.BigEndian.Uint16(header[2:4])
-		if dataLen > 2048 {
+		if dataLen > 1024*10 {
 			fmt.Printf("数据帧长度错误: %d\n", dataLen)
 			m.physical.Close()
 			time.Sleep(time.Second * 1)
