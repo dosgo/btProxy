@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"bytes"
 	"sync"
 	"time"
 )
@@ -85,24 +86,23 @@ func (m *MuxManager) OpenStream(id uint16, remoteAddr string) io.ReadWriteCloser
 	if ip == nil {
 		return nil
 	}
-	var payload []byte
+
+	payload := new(bytes.Buffer)
+	//id
+	binary.Write(payload, binary.BigEndian, id)
 	// 判断是 IPv4 还是 IPv6
 	if ip4 := ip.To4(); ip4 != nil {
 		// IPv4: 2(id) + 4(ip) + 2(port) = 8 bytes
-		payload = make([]byte, 8)
-		binary.BigEndian.PutUint16(payload[0:2], id)
-		copy(payload[2:6], ip4)
-		binary.BigEndian.PutUint16(payload[6:8], uint16(port))
+		payload.Write(ip4)
 	} else {
 		// IPv6: 2(id) + 16(ip) + 2(port) = 20 bytes (注：有些协议习惯对齐，这里按实长 20 字节)
-		payload = make([]byte, 20)
-		binary.BigEndian.PutUint16(payload[0:2], id)
-		copy(payload[2:18], ip.To16())
-		binary.BigEndian.PutUint16(payload[18:20], uint16(port))
+		payload.Write(ip.To16())
 	}
+	//port
+	binary.Write(payload, binary.BigEndian, uint16(port))
 
 	//包头的id是0表示新连接
-	if _, err := m.writePacket(0, payload); err != nil {
+	if _, err := m.writePacket(0, payload.Bytes()); err != nil {
 		return nil
 	}
 
