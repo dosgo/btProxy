@@ -1,12 +1,12 @@
 package comm
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
 	"strconv"
-	"bytes"
 	"sync"
 	"time"
 )
@@ -81,22 +81,27 @@ func (m *MuxManager) OpenStream(id uint16, remoteAddr string) io.ReadWriteCloser
 		return nil
 	}
 	port, _ := strconv.Atoi(portStr)
-	// 解析 IP 地址
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return nil
-	}
 
 	payload := new(bytes.Buffer)
-	//id
 	binary.Write(payload, binary.BigEndian, id)
-	// 判断是 IPv4 还是 IPv6
-	if ip4 := ip.To4(); ip4 != nil {
-		// IPv4: 2(id) + 4(ip) + 2(port) = 8 bytes
-		payload.Write(ip4)
+	// 解析 IP 地址
+	ip := net.ParseIP(host)
+	if ip != nil {
+		//id
+		// 判断是 IPv4 还是 IPv6
+		if ip4 := ip.To4(); ip4 != nil {
+			payload.WriteByte(0x01)
+			// IPv4: 2(id) + 4(ip) + 2(port) = 8 bytes
+			payload.Write(ip4)
+		} else {
+			// IPv6: 2(id) + 16(ip) + 2(port) = 20 bytes (注：有些协议习惯对齐，这里按实长 20 字节)
+			payload.WriteByte(0x02)
+			payload.Write(ip.To16())
+		}
 	} else {
-		// IPv6: 2(id) + 16(ip) + 2(port) = 20 bytes (注：有些协议习惯对齐，这里按实长 20 字节)
-		payload.Write(ip.To16())
+		//域名
+		payload.WriteByte(0x03)
+		payload.Write([]byte(host))
 	}
 	//port
 	binary.Write(payload, binary.BigEndian, uint16(port))

@@ -3,6 +3,7 @@ package com.dosgo.btProxy;
 import java.io.*;
 import java.net.*;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -58,14 +59,27 @@ public class BluetoothMuxHandler {
             // 2. 像点菜一样读取数据，自动处理字节序
             int realId = bb.getShort() & 0xFFFF; // 读取 2 字节 ID
 
-            // 3.ipv6 ipv4
-            int ipSize = (data.length == 20) ? 16 : 4;
-
-            byte[] ipBytes = new byte[ipSize];
-
-            bb.get(ipBytes); // 读取接下来的 4 字节
+            int  flag=bb.get() & 0xFF;
+            System.out.println("flag:"+flag);
+            String ip="";
+            //域名
+            if(flag==0x03){
+                byte[] stringBytes = new byte[data.length-5];
+                // 3. 从 ByteBuffer 中批量读取字节
+                bb.get(stringBytes);
+                // 4. 转换为字符串 (建议显式指定编码，通常是 UTF-8)
+                ip = new String(stringBytes, StandardCharsets.UTF_8);
+            }else {
+                int ipSize = (flag == 0x02) ? 16 : 4;
+                byte[] ipBytes = new byte[ipSize];
+                bb.get(ipBytes); // 读取接下来的 4 字节
+                try {
+                     ip = InetAddress.getByAddress(ipBytes).getHostAddress();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
             try {
-                String ip = InetAddress.getByAddress(ipBytes).getHostAddress();
                 int port = bb.getShort() & 0xFFFF; // 读取 2 字节 Port
                 // 存入路由表
                 final Socket newSocket = new Socket(ip, port);
