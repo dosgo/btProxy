@@ -135,7 +135,8 @@ func handleSocksConnection(conn net.Conn, mux *MuxManager) {
 		return
 	}
 	destPort := binary.BigEndian.Uint16(buf[:2])
-	fullTarget := fmt.Sprintf("%s", destAddr) // host 部分
+
+	fullTarget := net.JoinHostPort(destAddr, fmt.Sprintf("%d", destPort))
 
 	// --- 3. 建立 Mux 流 ---
 	// 这里的 portID 依然可以用本地随机端口，或者自定义逻辑
