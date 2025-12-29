@@ -29,20 +29,21 @@ public class BluetoothMuxHandler {
         new Thread(() -> {
             try {
                 byte[] header = new byte[4];
+                byte[] payload = new byte[1024*5];
                 while (true) {
                     // 1. 读取 4 字节头部
-                    readFull(btIn, header);
+                    readFull(btIn, header,4);
                     int id = ((header[0] & 0xFF) << 8) | (header[1] & 0xFF);
                     int len = ((header[2] & 0xFF) << 8) | (header[3] & 0xFF);
 
                     // 2. 读取 Payload 数据
-                    byte[] payload = new byte[len];
+                   // byte[] payload = new byte[len];
                     if (len > 0) {
-                        readFull(btIn, payload);
+                        readFull(btIn, payload,len);
                     }
 
                     // 3. 分发数据
-                    handleStreamData(id, payload);
+                    handleStreamData(id, payload,len);
                 }
             } catch (IOException e) {
                 e.printStackTrace();
@@ -51,11 +52,11 @@ public class BluetoothMuxHandler {
         }).start();
     }
 
-    private void handleStreamData(int id, byte[] data) {
+    private void handleStreamData(int id, byte[] data,int len) {
         //控制命令
         if(id==0){
             // 1. 使用 ByteBuffer 包装 payload
-            ByteBuffer bb = ByteBuffer.wrap(data);
+            ByteBuffer bb = ByteBuffer.wrap(data, 0, len);
             // 2. 像点菜一样读取数据，自动处理字节序
             int realId = bb.getShort() & 0xFFFF; // 读取 2 字节 ID
 
@@ -64,7 +65,7 @@ public class BluetoothMuxHandler {
             String ip="";
             //域名
             if(flag==0x03){
-                byte[] stringBytes = new byte[data.length-5];
+                byte[] stringBytes = new byte[len-5];
                 // 3. 从 ByteBuffer 中批量读取字节
                 bb.get(stringBytes);
                 // 4. 转换为字符串 (建议显式指定编码，通常是 UTF-8)
@@ -94,7 +95,7 @@ public class BluetoothMuxHandler {
         Socket targetSocket = streamMap.get(id);
         if(targetSocket!=null&& !targetSocket.isClosed()){
             try {
-                targetSocket.getOutputStream().write(data);
+                targetSocket.getOutputStream().write(data,0,len);
             } catch (IOException e) {
                 e.printStackTrace();
                 streamMap.remove(id);
@@ -146,10 +147,10 @@ public class BluetoothMuxHandler {
         btOut.flush();
     }
 
-    private void readFull(InputStream in, byte[] b) throws IOException {
+    private void readFull(InputStream in, byte[] b,int len) throws IOException {
         int offset = 0;
-        while (offset < b.length) {
-            int n = in.read(b, offset, b.length - offset);
+        while (offset <len) {
+            int n = in.read(b, offset, len - offset);
             if (n == -1) throw new EOFException("蓝牙流已断开");
             offset += n;
         }
