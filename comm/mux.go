@@ -130,15 +130,20 @@ func (m *MuxManager) writePacket(id uint16, data []byte) (int, error) {
 	defer m.writeMu.Unlock()
 
 	// 高性能优化：使用固定数组减少内存分配
-	header := [4]byte{}
-	binary.BigEndian.PutUint16(header[0:2], id)
-	binary.BigEndian.PutUint16(header[2:4], uint16(len(data)))
-	if _, err := m.physical.Write(header[:]); err != nil {
+	dataLen := len(data)
+	buf := make([]byte, 4+dataLen)
+	binary.BigEndian.PutUint16(buf[0:2], id)
+	binary.BigEndian.PutUint16(buf[2:4], uint16(dataLen))
+	copy(buf[4:], data)
+	m.streamsLastTime.Store(id, time.Now().Unix())
+	_, err := m.physical.Write(buf)
+	if err != nil {
 		return 0, err
 	}
-	m.streamsLastTime.Store(id, time.Now().Unix())
 
-	return m.physical.Write(data)
+	// 3. 关键点：返回调用方期望的长度，即 data 的原始长度
+	// 这样上层 (如 io.Copy) 才会认为这批数据已完整处理
+	return dataLen, nil
 }
 
 func (m *MuxManager) checkActive() {
