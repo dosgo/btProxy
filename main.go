@@ -22,7 +22,8 @@ func main() {
 	//多路复用
 	mux := comm.NewMuxManager(btRaw)
 	defer mux.CloseBt()
-	go comm.StartProxy(mux, tcpPort, "127.0.0.1:8023")
+	go comm.StartPortProxy(mux, tcpPort, "127.0.0.1:8023")
+	go comm.StartSocksProxy(mux, ":8090")
 	<-sigChan
 	comm.StopProxy(tcpPort)
 }

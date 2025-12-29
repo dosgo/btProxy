@@ -203,30 +203,33 @@ func (ui *AppUI) removeMappingRow(row *MappingRow) {
 	// 更新 UI
 	ui.mappingsContainer.Remove(row.Container)
 	ui.mappingsContainer.Refresh()
+	//同步配置
+	ui.syncConf()
+	comm.StopProxy(fmt.Sprintf(":%d", row.LocalPortEntry.Text))
 }
 func (ui *AppUI) addMappingRow(port, addr string) {
 	row := ui.createMappingRow(port, addr)
 	ui.mappingRows = append(ui.mappingRows, row)
 	ui.mappingsContainer.Add(row.Container)
 	ui.mappingsContainer.Refresh()
+	//同步配置
+	ui.syncConf()
 }
 
 func (ui *AppUI) stopProxy() error {
 	for _, m := range ui.config.Mappings {
-		// 每个端口启动一个协程，共用一个 mux
-		go comm.StopProxy(fmt.Sprintf(":%d", m.LocalPort))
+		if m.LocalPort > 0 {
+			// 每个端口启动一个协程，共用一个 mux
+			comm.StopProxy(fmt.Sprintf(":%d", m.LocalPort))
+		}
 	}
 	ui.startBtn.Text = "启动代理"
+	ui.startBtn.Refresh()
 	return nil
 }
 
-// startProxy 启动蓝牙代理
-func (ui *AppUI) startProxy() error {
-	// 验证输入
-	if err := ui.macEntry.Validate(); err != nil {
-		return fmt.Errorf("MAC 地址无效: %v", err)
-	}
-
+/*同步配置并且保存*/
+func (ui *AppUI) syncConf() {
 	ui.config.BluetoothMAC = ui.macEntry.Text
 	var newMappings []comm.ProxyMapping
 	for _, row := range ui.mappingRows {
@@ -238,24 +241,34 @@ func (ui *AppUI) startProxy() error {
 			})
 		}
 	}
-	if len(newMappings) < 0 {
-		return fmt.Errorf("至少需要一个映射地址")
-	}
 	ui.config.Mappings = newMappings
 	comm.SaveConfig(ui.config)
+}
 
-	btRaw := comm.NewConnectBT(ui.macEntry.Text)
+// startProxy 启动蓝牙代理
+func (ui *AppUI) startProxy() error {
+	// 验证输入
+	if err := ui.macEntry.Validate(); err != nil {
+		return fmt.Errorf("MAC 地址无效: %v", err)
+	}
+	//同步配置
+	ui.syncConf()
+
+	btRaw := comm.NewConnectBT(ui.config.BluetoothMAC)
 	//多路复用
 	mux := comm.NewMuxManager(btRaw)
 
 	for _, m := range ui.config.Mappings {
-		// 每个端口启动一个协程，共用一个 mux
-		go comm.StartProxy(mux, fmt.Sprintf(":%d", m.LocalPort), m.RemoteAddr)
+		if m.LocalPort > 0 {
+			// 每个端口启动一个协程，共用一个 mux
+			go comm.StartPortProxy(mux, fmt.Sprintf(":%d", m.LocalPort), m.RemoteAddr)
+		}
 	}
 
 	fmt.Printf("启动蓝牙代理: MAC=%s, AutoStart=%v\n",
 		ui.config.BluetoothMAC, ui.config.AutoStart)
 	ui.startBtn.Text = "停止代理"
+	ui.startBtn.Refresh()
 	return nil
 }
 

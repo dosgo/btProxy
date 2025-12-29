@@ -82,7 +82,6 @@ func (a *ConnectBT) Read(p []byte) (n int, err error) {
 			a.mu.Lock()
 			a.conn = nil
 			a.mu.Unlock()
-
 		}
 		return n, err
 	}

@@ -18,6 +18,7 @@ type MuxManager struct {
 	streamsLastTime sync.Map
 	mu              sync.RWMutex
 	writeMu         sync.Mutex // 物理写锁，保证Header和Data不被拆散
+	lastID          uint16
 }
 
 func NewMuxManager(p io.ReadWriteCloser) *MuxManager {
@@ -28,6 +29,16 @@ func NewMuxManager(p io.ReadWriteCloser) *MuxManager {
 	go m.readLoop() // 启动后台“拆包”协程
 	go m.checkActive()
 	return m
+}
+
+func (m *MuxManager) nextID() uint16 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.lastID++
+	if m.lastID == 0 { // 绕过 0，通常 0 保留给控制帧
+		m.lastID = 1
+	}
+	return m.lastID
 }
 
 // readLoop 在底层做手脚：解析 ID，把数据塞进正确的通道
@@ -71,7 +82,8 @@ func (m *MuxManager) readLoop() {
 }
 
 // OpenStream 是关键：它返回一个类似流的对象，侵入性极小
-func (m *MuxManager) OpenStream(id uint16, remoteAddr string) io.ReadWriteCloser {
+func (m *MuxManager) OpenStream(remoteAddr string) io.ReadWriteCloser {
+	id := m.nextID()
 	ch := make(chan []byte, 1024)
 	m.mu.Lock()
 	m.streams[id] = ch
@@ -176,7 +188,7 @@ func (v *VirtualConn) Read(p []byte) (int, error) {
 	if len(v.cacheBuf) > 0 {
 		n := copy(p, v.cacheBuf)
 		v.cacheBuf = v.cacheBuf[n:]
-		fmt.Printf("1111\r\n")
+		fmt.Printf("read last\r\n")
 		return n, nil
 	}
 
@@ -191,7 +203,7 @@ func (v *VirtualConn) Read(p []byte) (int, error) {
 	// 4. 如果 p 装不下，把剩下的存入 v.buf
 	if n < len(data) {
 		v.cacheBuf = append(v.cacheBuf, data[n:]...)
-		fmt.Printf("eeee\r\n")
+		fmt.Printf("read overflow\r\n")
 	}
 	return n, nil
 }
