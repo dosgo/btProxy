@@ -2,7 +2,6 @@ package comm
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -76,9 +75,7 @@ func (a *ConnectBT) Read(p []byte) (n int, err error) {
 	currConn := a.conn
 	a.mu.Unlock()
 	if currConn != nil {
-		//	currConn.SetReadDeadline(time.Now().Add(5 * time.Second))
 		n, err = currConn.Read(p)
-		fmt.Printf("Read Len:%d n:%d\r\n", len(p), n)
 		if err != nil {
 			log.Printf("蓝牙读取失败: %v, 准备重连...", err)
 			currConn.Close()

@@ -41,8 +41,14 @@ func (m *MuxManager) readLoop() {
 
 		id := binary.BigEndian.Uint16(header[0:2])
 		dataLen := binary.BigEndian.Uint16(header[2:4])
+		if dataLen > 2048 {
+			fmt.Printf("数据帧长度错误: %d\n", dataLen)
+			m.physical.Close()
+			time.Sleep(time.Second * 1)
+			continue
+		}
 		payload := make([]byte, dataLen)
-		fmt.Printf("id:%d dataLen:%d payloadLen:%d\r\n", id, dataLen, len(payload))
+		//fmt.Printf("id:%d dataLen:%d payloadLen:%d\r\n", id, dataLen, len(payload))
 		if _, err := io.ReadFull(m.physical, payload); err != nil {
 			fmt.Printf("Mux读取载荷失败: %v\n", err)
 			continue
