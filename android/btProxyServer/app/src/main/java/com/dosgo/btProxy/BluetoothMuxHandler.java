@@ -126,26 +126,21 @@ public class BluetoothMuxHandler {
         }).start();
     }
 
+    private final ByteBuffer sendBuf = ByteBuffer.allocate(1024 * 11);
+
     /**
      * 封包发送：[ID(2)][Len(2)][Data...]
      * 使用 synchronized 保证物理写入的原子性，防止多线程写入导致包头交织
      */
     private synchronized void sendFrame(int id, byte[] data, int len) throws IOException {
-        byte[] frame = new byte[4 + len];
-        ByteBuffer bb = ByteBuffer.wrap(frame);
-        System.out.println("sendFrame len:"+len);
+        sendBuf.clear();
+        sendBuf.order(java.nio.ByteOrder.BIG_ENDIAN);
+        sendBuf.putShort((short) id);
+        sendBuf.putShort((short) len);
+        sendBuf.put(data, 0, len);
 
-        // 2. 显式设置大端序 (Big Endian)
-        bb.order(java.nio.ByteOrder.BIG_ENDIAN);
-
-        // 3. 写入 2 字节 ID 和 2 字节 长度
-        bb.putShort((short) id);
-        bb.putShort((short) len);
-
-        // 4. 写入剩余的数据载荷
-        bb.put(data, 0, len);
-        btOut.write(frame);
-        btOut.flush();
+        // 只调用一次 write，且没有产生任何 new byte[] 垃圾
+        btOut.write(sendBuf.array(), 0, sendBuf.position());
     }
 
     private void readFull(InputStream in, byte[] b,int len) throws IOException {
