@@ -79,6 +79,7 @@ func (s *RawBtSocket) Read(p []byte) (int, error) {
 	if err != nil {
 		// 如果返回 WSAEWOULDBLOCK，说明暂时没数据
 		if err == windows.WSAEWOULDBLOCK {
+			time.Sleep(5 * time.Millisecond)
 			return 0, nil
 		}
 		return 0, err

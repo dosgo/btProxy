@@ -11,6 +11,17 @@ import (
 	"time"
 )
 
+var writeBufferPool = sync.Pool{
+	New: func() interface{} {
+		// 预分配一个足够大的缓冲区（例如 16KB）
+		return make([]byte, 33*1024)
+	},
+}
+
+var readPool = sync.Pool{
+	New: func() interface{} { return make([]byte, 10*1024) }, // 预设最大包大小
+}
+
 // MuxManager 负责管理那个唯一的蓝牙物理连接
 type MuxManager struct {
 	physical        io.ReadWriteCloser
@@ -47,7 +58,8 @@ func (m *MuxManager) readLoop() {
 	for {
 		if _, err := io.ReadFull(m.physical, header); err != nil {
 			fmt.Printf("Mux读取头部失败: %v，等待重试...\n", err)
-			time.Sleep(time.Second * 1)
+			m.physical.Close()
+			time.Sleep(time.Second * 2)
 			continue // 不要 return，继续循环等待 ConnectBT 重连成功
 		}
 
@@ -59,9 +71,12 @@ func (m *MuxManager) readLoop() {
 			time.Sleep(time.Second * 1)
 			continue
 		}
-		payload := make([]byte, dataLen)
+		//payload := make([]byte, dataLen)
+		payload := readPool.Get().([]byte)
+		// 只读取需要长度的数据到 buf 的前部
+
 		//fmt.Printf("id:%d dataLen:%d payloadLen:%d\r\n", id, dataLen, len(payload))
-		if _, err := io.ReadFull(m.physical, payload); err != nil {
+		if _, err := io.ReadFull(m.physical, payload[:dataLen]); err != nil {
 			fmt.Printf("Mux读取载荷失败: %v\n", err)
 			continue
 		}
@@ -70,7 +85,7 @@ func (m *MuxManager) readLoop() {
 		if ch, ok := m.streams[id]; ok {
 			m.streamsLastTime.Store(id, time.Now().Unix())
 			select {
-			case ch <- payload:
+			case ch <- payload[:dataLen]:
 				// 成功
 			case <-time.After(time.Millisecond * 200):
 				// 半秒钟还没发进去，说明这个流彻底堵死了，关闭或记录错误
@@ -131,12 +146,16 @@ func (m *MuxManager) writePacket(id uint16, data []byte) (int, error) {
 
 	// 高性能优化：使用固定数组减少内存分配
 	dataLen := len(data)
-	buf := make([]byte, 4+dataLen)
+	//buf := make([]byte, 4+dataLen)
+
+	buf := writeBufferPool.Get().([]byte)
+	defer writeBufferPool.Put(buf) // 发完记得还回去
+
 	binary.BigEndian.PutUint16(buf[0:2], id)
 	binary.BigEndian.PutUint16(buf[2:4], uint16(dataLen))
 	copy(buf[4:], data)
 	m.streamsLastTime.Store(id, time.Now().Unix())
-	_, err := m.physical.Write(buf)
+	_, err := m.physical.Write(buf[:4+dataLen])
 	if err != nil {
 		return 0, err
 	}
@@ -204,6 +223,7 @@ func (v *VirtualConn) Read(p []byte) (int, error) {
 
 	// 3. 拷贝数据
 	n := copy(p, data)
+	readPool.Put(data[:cap(data)])
 	// 4. 如果 p 装不下，把剩下的存入 v.buf
 	if n < len(data) {
 		v.cacheBuf = append(v.cacheBuf, data[n:]...)
