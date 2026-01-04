@@ -58,7 +58,6 @@ func (m *MuxManager) readLoop() {
 	for {
 		if _, err := io.ReadFull(m.physical, header); err != nil {
 			fmt.Printf("Mux读取头部失败: %v，等待重试...\n", err)
-			m.physical.Close()
 			time.Sleep(time.Second * 2)
 			continue // 不要 return，继续循环等待 ConnectBT 重连成功
 		}
