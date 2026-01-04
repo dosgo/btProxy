@@ -1,5 +1,7 @@
 package com.dosgo.btProxy;
 
+import android.net.Network;
+
 import java.io.*;
 import java.net.*;
 import java.nio.ByteBuffer;
@@ -16,10 +18,11 @@ public class BluetoothMuxHandler {
     // 用于管理逻辑流 ID (端口) 与本地 Socket 的映射
     private final ConcurrentHashMap<Integer, Socket> streamMap = new ConcurrentHashMap<>();
 
-
-    public BluetoothMuxHandler(InputStream btIn, OutputStream btOut ) {
+    private Network mobileNetwork;
+    public BluetoothMuxHandler(InputStream btIn, OutputStream btOut, Network mobileNetwork) {
         this.btIn = btIn;
         this.btOut = btOut;
+        this.mobileNetwork=mobileNetwork;
     }
 
     /**
@@ -84,7 +87,14 @@ public class BluetoothMuxHandler {
             try {
                 int port = bb.getShort() & 0xFFFF; // 读取 2 字节 Port
                 // 存入路由表
-                final Socket newSocket = new Socket(ip, port);
+               // final Socket newSocket = new Socket(ip, port);
+                final  Socket newSocket = new Socket();
+                if(mobileNetwork!=null) {
+                    System.out.println("use mobile connect "+ip+"port:"+port);
+                    mobileNetwork.bindSocket(newSocket); // 核心：绑定移动网网卡
+                }
+                newSocket.connect(new InetSocketAddress(ip,port), 5000);
+
                 streamMap.put(realId, newSocket);
                 startReverseBridge(realId, newSocket);
             } catch (IOException e) {

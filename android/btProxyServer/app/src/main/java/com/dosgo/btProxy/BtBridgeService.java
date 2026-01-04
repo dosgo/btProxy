@@ -8,8 +8,13 @@ import android.app.Service;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothServerSocket;
 import android.bluetooth.BluetoothSocket;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.os.Build;
 import android.os.IBinder;
 
@@ -28,6 +33,10 @@ public class BtBridgeService extends Service {
 
     private boolean isRunning = true;
 
+    private ConnectivityManager connectivityManager;
+    private Network mobileNetwork; // 存储拿到的移动网络句柄
+
+    private SimpleSocks5Server socksServer;
     @Override
     public void onCreate() {
         super.onCreate();
@@ -36,7 +45,30 @@ public class BtBridgeService extends Service {
         // 2. 获取 Notification 对象
         Notification notification = getNotification("蓝牙隧道已启动，等待连接...");
         startForeground(1,notification);
+
+        connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        requestMobileNetwork(); // 第一步：准备移动网络
+
         startBridgeThread();
+    }
+
+    private void requestMobileNetwork() {
+        NetworkRequest request = new NetworkRequest.Builder()
+                .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build();
+
+        connectivityManager.requestNetwork(request, new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onAvailable( Network network) {
+                mobileNetwork = network;
+                if( Status.socksPort>0) {
+                    socksServer = new SimpleSocks5Server(8880, mobileNetwork);
+                    socksServer.start();
+                }
+                System.out.println("requestMobileNetwork ok");
+            }
+        });
     }
 
     private void startBridgeThread() {
@@ -53,7 +85,7 @@ public class BtBridgeService extends Service {
                     BluetoothSocket btSocket = serverSocket.accept(); // 阻塞等待连接
                     updateNotification("蓝牙已连接，正在桥接 TCP...");
                     // 1. 实例化处理器
-                    BluetoothMuxHandler muxHandler = new BluetoothMuxHandler(btSocket.getInputStream(), btSocket.getOutputStream());
+                    BluetoothMuxHandler muxHandler = new BluetoothMuxHandler(btSocket.getInputStream(), btSocket.getOutputStream(),mobileNetwork);
 
                     // 2. 启动主循环（它会开启后台线程解析 Header）
                     muxHandler.start();
@@ -114,6 +146,9 @@ public class BtBridgeService extends Service {
         } catch (IOException e){
             e.printStackTrace();
         };
+        if (socksServer != null) {
+            socksServer.stop();
+        }
         super.onDestroy();
     }
 
