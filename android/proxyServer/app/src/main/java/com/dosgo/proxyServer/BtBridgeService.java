@@ -142,6 +142,7 @@ public class BtBridgeService extends Service {
     @Override
     public void onDestroy() {
         isRunning = false;
+        stopForeground(STOP_FOREGROUND_REMOVE);
         try {
             if (serverSocket != null) serverSocket.close();
         } catch (IOException e){
