@@ -58,10 +58,6 @@ public class CellularVpnService extends VpnService {
                 cm.bindProcessToNetwork(network);
                 // 1. 获取 Handle
                 long handle = network.getNetworkHandle();
-
-                // 2. 将进程绑定到该网络（确保此进程发出的 Socket 默认走移动网络）
-                cm.bindProcessToNetwork(network);
-
                 // 3. 启动 Go 栈，传入这个 handle
                 // 这里的 startStack 是你 AAR 里的导出函数
                 new Thread(() -> {
