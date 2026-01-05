@@ -78,7 +78,10 @@ public class CellularVpnService extends VpnService {
             builder.addDisallowedApplication("com.android.networkstack");
 // 3. 基础服务框架（许多探测请求会代理给 gms 发起）
             builder.addDisallowedApplication("com.google.android.gms");
-
+            builder.addDisallowedApplication("com.google.android.apps.bard");
+            // 排除 Google App (Gemini 的核心载体)
+            builder.addDisallowedApplication("com.google.android.googlequicksearchbox");
+            builder.addDisallowedApplication("com.microsoft.emmx");
             mInterface = builder.setSession("ForceCellular")
                     .setMtu(1500)
                     .addAddress("10.8.8.1", 24)
