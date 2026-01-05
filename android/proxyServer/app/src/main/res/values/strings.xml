@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">ProxyServer</string>
+    <string name="startText">启动蓝牙代理</string>
+    <string name="stopText">停止蓝牙代理</string>
+    <string name="startVpnText">启动移动网络代理</string>
+    <string name="stopVpnText">停止移动网络代理</string>
+
+</resources>

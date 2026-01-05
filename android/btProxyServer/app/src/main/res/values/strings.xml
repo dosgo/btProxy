@@ -1,6 +1,0 @@
-<resources>
-    <string name="app_name">Bt Proxy</string>
-    <string name="startText">启动蓝牙代理</string>
-    <string name="stopText">停止蓝牙代理</string>
-
-</resources>
