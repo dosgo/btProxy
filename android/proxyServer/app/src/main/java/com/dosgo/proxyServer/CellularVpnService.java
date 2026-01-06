@@ -100,6 +100,7 @@ public class CellularVpnService extends VpnService {
                     .setMtu(1500)
                     .addAddress("10.8.8.1", 24)
                     .addRoute("0.0.0.0", 0)
+                    .addRoute("::", 0)
                     .addDnsServer("223.5.5.5")
                     .establish();
             if (mInterface != null) {
