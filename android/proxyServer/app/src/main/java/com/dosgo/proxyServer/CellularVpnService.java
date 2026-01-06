@@ -25,6 +25,8 @@ public class CellularVpnService extends VpnService {
     private ParcelFileDescriptor mInterface;
     private ConnectivityManager cm;
     private Network targetMobileNetwork;
+
+    private SimpleSocks5Server socksServer;
     private int vpnFd;
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -63,6 +65,13 @@ public class CellularVpnService extends VpnService {
                 new Thread(() -> {
                     Cellularvpn.startStack(vpnFd, handle);
                 }).start();
+
+
+                if( Status.socksPort>0) {
+                    socksServer = new SimpleSocks5Server( Status.socksPort, targetMobileNetwork);
+                    socksServer.start();
+                }
+
             }
         });
     }
@@ -136,6 +145,9 @@ public class CellularVpnService extends VpnService {
             }
         } catch (Exception e) {
             Log.e(TAG, "销毁失败", e);
+        }
+        if (socksServer != null) {
+            socksServer.stop();
         }
         super.onDestroy();
     }

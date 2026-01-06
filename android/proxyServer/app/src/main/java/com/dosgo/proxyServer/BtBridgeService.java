@@ -36,7 +36,7 @@ public class BtBridgeService extends Service {
     private ConnectivityManager connectivityManager;
     private Network mobileNetwork; // 存储拿到的移动网络句柄
 
-    private SimpleSocks5Server socksServer;
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -62,11 +62,6 @@ public class BtBridgeService extends Service {
             @Override
             public void onAvailable( Network network) {
                 mobileNetwork = network;
-                if( Status.socksPort>0) {
-                    socksServer = new SimpleSocks5Server(8880, mobileNetwork);
-                    socksServer.start();
-                }
-
                 System.out.println("requestMobileNetwork ok");
             }
         });
@@ -148,9 +143,7 @@ public class BtBridgeService extends Service {
         } catch (IOException e){
             e.printStackTrace();
         };
-        if (socksServer != null) {
-            socksServer.stop();
-        }
+
         super.onDestroy();
     }
 
