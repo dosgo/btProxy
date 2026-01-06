@@ -93,6 +93,9 @@ public class CellularVpnService extends VpnService {
             // 排除 Google App (Gemini 的核心载体)
             builder.addDisallowedApplication("com.google.android.googlequicksearchbox");
             builder.addDisallowedApplication("com.microsoft.emmx");
+
+            // 在 setupVpn 时，重点排除这个
+            builder.addDisallowedApplication("com.android.captiveportallogin");
             mInterface = builder.setSession("ForceCellular")
                     .setMtu(1500)
                     .addAddress("10.8.8.1", 24)
