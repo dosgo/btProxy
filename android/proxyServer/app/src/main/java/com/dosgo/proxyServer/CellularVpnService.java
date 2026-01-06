@@ -57,7 +57,14 @@ public class CellularVpnService extends VpnService {
                 // 核心：告诉系统这个VPN是跑在流量上的
                 setUnderlyingNetworks(new Network[]{network});
                 targetMobileNetwork=network;
-                cm.bindProcessToNetwork(network);
+
+                System.out.println("socksPort:"+ Status.socksPort);
+                if( Status.socksPort>0) {
+                    System.out.println("socksPort2:"+ Status.socksPort);
+                    socksServer = new SimpleSocks5Server( Status.socksPort, targetMobileNetwork);
+                    socksServer.start();
+                }
+              //  cm.bindProcessToNetwork(network);
                 // 1. 获取 Handle
                 long handle = network.getNetworkHandle();
                 // 3. 启动 Go 栈，传入这个 handle
@@ -66,11 +73,6 @@ public class CellularVpnService extends VpnService {
                     Cellularvpn.startStack(vpnFd, handle);
                 }).start();
 
-
-                if( Status.socksPort>0) {
-                    socksServer = new SimpleSocks5Server( Status.socksPort, targetMobileNetwork);
-                    socksServer.start();
-                }
 
             }
         });

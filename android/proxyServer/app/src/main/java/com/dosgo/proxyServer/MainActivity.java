@@ -49,18 +49,7 @@ public class MainActivity extends AppCompatActivity {
                 Status.isRunning=false;
 
             }else {
-                String portStr=socksPort.getText().toString().trim();
-                if (!portStr.isEmpty()) {
-                    try {
-                        int port = Integer.parseInt(portStr);
-                        // 在这里使用 port
-                        Status.socksPort = port;
-                    } catch (NumberFormatException e) {
-                        Status.socksPort = 0;
-                        // 如果字符串不是有效的数字（例如 "1080a"），会进入这里
-                        Log.e("Socks5", "输入的端口格式不正确");
-                    }
-                }
+
                 Intent intent = new Intent(this, BtBridgeService.class);
                 btnStart.setText(R.string.stopText);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -92,7 +81,7 @@ public class MainActivity extends AppCompatActivity {
                 result -> {
                     if (result.getResultCode() == RESULT_OK) {
                         // 用户授权成功，启动服务
-                        startSecureDnsService();
+                        startVpnService();
                     } else {
                         // 用户拒绝了授权
                         Log.e("VPN", "User denied VPN permission");
@@ -112,11 +101,23 @@ public class MainActivity extends AppCompatActivity {
             vpnPermissionLauncher.launch(intent);
         } else {
             // 已经授权过了，直接启动
-            startSecureDnsService();
+            startVpnService();
             vpnStart.setText(R.string.stopVpnText);
         }
     }
-    private void startSecureDnsService() {
+    private void startVpnService() {
+        String portStr=socksPort.getText().toString().trim();
+        if (!portStr.isEmpty()) {
+            try {
+                int port = Integer.parseInt(portStr);
+                // 在这里使用 port
+                Status.socksPort = port;
+            } catch (NumberFormatException e) {
+                Status.socksPort = 0;
+                // 如果字符串不是有效的数字（例如 "1080a"），会进入这里
+                Log.e("Socks5", "输入的端口格式不正确");
+            }
+        }
         Intent intent = new Intent(this, CellularVpnService.class);
         startService(intent);
         Status.vpnIsRunning=true;
