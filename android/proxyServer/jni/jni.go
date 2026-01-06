@@ -40,7 +40,7 @@ func StartStack(fd int, netHandle int64) {
 	})
 	ep, _ := fdbased.New(&fdbased.Options{
 		FDs:            []int{fd},
-		MTU:            1420,
+		MTU:            1500,
 		EthernetHeader: false,
 	})
 
