@@ -66,7 +66,10 @@ public class MainActivity extends AppCompatActivity {
 
             if(Status.vpnIsRunning){
                 System.out.println("stop");
-                stopService(new Intent(this, CellularVpnService.class));
+                Intent stopIntent = new Intent(this, CellularVpnService.class);
+                stopIntent.setAction("ACTION_STOP_VPN");
+                // 使用 startService 发送信号，而不是 stopService
+                startService(stopIntent);
                 System.out.println("stop1");
                 Status.vpnIsRunning=false;
                 vpnStart.setText(R.string.startVpnText);

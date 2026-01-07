@@ -29,7 +29,7 @@ public class CellularVpnService extends VpnService {
     private static final int NOTIFICATION_ID = 18100;
     private SimpleSocks5Server socksServer;
     private int vpnFd;
-
+    private ConnectivityManager.NetworkCallback networkCallback;
 
     @Override
     public void onCreate() {
@@ -57,11 +57,15 @@ public class CellularVpnService extends VpnService {
     }
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        // 增加逻辑：如果收到带有停止标识的 Intent，则执行内部退出
+        if (intent != null && "ACTION_STOP_VPN".equals(intent.getAction())) {
+            performManualStop();
+            return START_NOT_STICKY; // 停止时不要让系统自动重启
+        }
         setupVpn();
-        // 2. 请求移动网络并绑定为底层链路
         requestMobileNetwork();
         System.out.println("onStartCommand ok");
-        return START_NOT_STICKY;
+        return START_STICKY;
     }
 
     private void requestMobileNetwork() {
@@ -70,7 +74,7 @@ public class CellularVpnService extends VpnService {
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                 .build();
 
-        cm.requestNetwork(request, new ConnectivityManager.NetworkCallback() {
+        networkCallback = new ConnectivityManager.NetworkCallback() {
             @Override
             public void onAvailable(Network network) {
                 Log.d(TAG, "移动网络已就绪，绑定底层链路");
@@ -84,7 +88,7 @@ public class CellularVpnService extends VpnService {
                     socksServer = new SimpleSocks5Server( Status.socksPort, targetMobileNetwork);
                     socksServer.start();
                 }
-              //  cm.bindProcessToNetwork(network);
+                //  cm.bindProcessToNetwork(network);
                 // 1. 获取 Handle
                 long handle = network.getNetworkHandle();
                 // 3. 启动 Go 栈，传入这个 handle
@@ -92,10 +96,10 @@ public class CellularVpnService extends VpnService {
                 new Thread(() -> {
                     Cellularvpn.startStack(vpnFd, handle);
                 }).start();
-
-
             }
-        });
+        };
+
+        cm.requestNetwork(request, networkCallback);
     }
 
     private void setupVpn() {
@@ -177,30 +181,37 @@ public class CellularVpnService extends VpnService {
 
     @Override
     public void onDestroy() {
-        
-        // 2. 停止前台通知，移除通知栏
-       // stopForeground(STOP_FOREGROUND_REMOVE);
+
 
         System.out.println("CellularVpnService onDestroy");
         super.onDestroy();
-        /*
+
+    }
+    private void performManualStop() {
+        // 1. 关键：首先强制让 Go 栈退出循环（释放对 FD 的占用）
+        Cellularvpn.stopStack();
+
+        // 2. 主动关闭 VPN 接口（断开内核引用）
         try {
             if (mInterface != null) {
                 mInterface.close();
                 mInterface = null;
             }
         } catch (Exception e) {
-            Log.e(TAG, "销毁失败", e);
+            Log.e(TAG, "Manual stop close FD failed", e);
+        }
+
+        // 3. 释放网络回调
+        if (cm != null && networkCallback != null) {
+            cm.unregisterNetworkCallback(networkCallback);
         }
         if (socksServer != null) {
             socksServer.stop();
         }
 
-        Cellularvpn.stopStack();
 
-         */
+        stopSelf();
     }
-
 
     @Override
     public IBinder onBind(Intent intent) { return null; }
