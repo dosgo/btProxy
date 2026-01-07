@@ -11,6 +11,7 @@ import android.bluetooth.BluetoothSocket;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.ServiceInfo;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -35,7 +36,7 @@ public class BtBridgeService extends Service {
 
     private ConnectivityManager connectivityManager;
     private Network mobileNetwork; // 存储拿到的移动网络句柄
-
+    private static final int NOTIFICATION_ID = 10099;
 
     @Override
     public void onCreate() {
@@ -44,7 +45,19 @@ public class BtBridgeService extends Service {
 
         // 2. 获取 Notification 对象
         Notification notification = getNotification("蓝牙隧道已启动，等待连接...");
-        startForeground(1,notification);
+
+
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
+        }else {
+            startForeground(
+                    NOTIFICATION_ID,
+                    notification);
+        }
+
 
         connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         requestMobileNetwork(); // 第一步：准备移动网络
@@ -95,10 +108,16 @@ public class BtBridgeService extends Service {
 
 
     private void createNotificationChannel() {
+
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel serviceChannel = new NotificationChannel(
-                    CHANNEL_ID, "蓝牙桥接服务", NotificationManager.IMPORTANCE_LOW);
-            getSystemService(NotificationManager.class).createNotificationChannel(serviceChannel);
+            NotificationChannel channel = new NotificationChannel(
+                    CHANNEL_ID,
+                    "蓝牙桥接服务",
+                    NotificationManager.IMPORTANCE_LOW
+            );
+            ((NotificationManager) getSystemService(NOTIFICATION_SERVICE))
+                    .createNotificationChannel(channel);
         }
     }
 
@@ -119,7 +138,7 @@ public class BtBridgeService extends Service {
                 .setContentTitle("蓝牙TCP代理")
                 .setContentText(content)
                 // 注意：必须设置小图标，否则某些机型会报错或无法启动前台服务
-                .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+                .setSmallIcon(R.drawable.logo)
                 .setOngoing(true) // 设置为持久通知
                 .build();
     }
@@ -128,6 +147,9 @@ public class BtBridgeService extends Service {
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         nm.notify(1, getNotification(content));
     }
+
+
+
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {

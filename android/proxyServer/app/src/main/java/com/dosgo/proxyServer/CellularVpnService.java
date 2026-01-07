@@ -12,6 +12,7 @@ import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
 import android.net.VpnService;
 import android.os.Build;
+import android.os.IBinder;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 import androidx.core.app.NotificationCompat;
@@ -25,23 +26,42 @@ public class CellularVpnService extends VpnService {
     private ParcelFileDescriptor mInterface;
     private ConnectivityManager cm;
     private Network targetMobileNetwork;
-
+    private static final int NOTIFICATION_ID = 18100;
     private SimpleSocks5Server socksServer;
     private int vpnFd;
+
+
     @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        // 1. 立即启动前台通知（Android强制要求，否则不给图标且会崩溃）
-        startForegroundService();
+    public void onCreate() {
+        super.onCreate();
+        createNotificationChannel();
+
+        // 2. 获取 Notification 对象
+        Notification notification = getNotification();
+
+
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+        }else {
+            startForeground(
+                    NOTIFICATION_ID,
+                    notification);
+        }
 
         cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+
+
+    }
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
         setupVpn();
         // 2. 请求移动网络并绑定为底层链路
         requestMobileNetwork();
-
-        // 3. 建立VPN接口（激活钥匙图标）
-
-
-        return START_STICKY;
+        System.out.println("onStartCommand ok");
+        return START_NOT_STICKY;
     }
 
     private void requestMobileNetwork() {
@@ -87,7 +107,7 @@ public class CellularVpnService extends VpnService {
             // 关键：排除掉自己的 App，防止自己的请求也被 VPN 逻辑干扰
             builder.addDisallowedApplication(getPackageName());
             builder.addDisallowedApplication("com.android.networkstack");
-// 3. 基础服务框架（许多探测请求会代理给 gms 发起）
+            // 3. 基础服务框架（许多探测请求会代理给 gms 发起）
             builder.addDisallowedApplication("com.google.android.gms");
             builder.addDisallowedApplication("com.google.android.apps.bard");
             // 排除 Google App (Gemini 的核心载体)
@@ -117,33 +137,53 @@ public class CellularVpnService extends VpnService {
 
 
 
-    private void startForegroundService() {
+
+
+    private void createNotificationChannel() {
+
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
-                    CHANNEL_ID, "流量切换服务", NotificationManager.IMPORTANCE_LOW);
-            NotificationManager nm = getSystemService(NotificationManager.class);
-            if (nm != null) nm.createNotificationChannel(channel);
+                    CHANNEL_ID,
+                    "流量切换服务",
+                    NotificationManager.IMPORTANCE_LOW
+            );
+            ((NotificationManager) getSystemService(NOTIFICATION_SERVICE))
+                    .createNotificationChannel(channel);
+        }
+    }
+
+    private Notification getNotification() {
+
+
+        Notification.Builder builder;
+
+        // 针对 Android 8.0 (API 26) 及以上版本，必须关联 Channel ID
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            builder = new Notification.Builder(this, CHANNEL_ID);
+        } else {
+            // 旧版本不需要 Channel ID
+            builder = new Notification.Builder(this);
         }
 
-        Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
+        return builder
                 .setContentTitle("强制流量模式已启动")
                 .setContentText("正在通过移动网络优化连接")
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                // 注意：必须设置小图标，否则某些机型会报错或无法启动前台服务
+                .setSmallIcon(R.drawable.logo)
+                .setOngoing(true) // 设置为持久通知
                 .build();
-
-        // 适配 Android 14+ 的特殊类型要求
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(2, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
-        } else {
-            startForeground(2, notification);
-        }
     }
 
     @Override
     public void onDestroy() {
+        
         // 2. 停止前台通知，移除通知栏
-        stopForeground(STOP_FOREGROUND_REMOVE);
+       // stopForeground(STOP_FOREGROUND_REMOVE);
 
+        System.out.println("CellularVpnService onDestroy");
+        super.onDestroy();
+        /*
         try {
             if (mInterface != null) {
                 mInterface.close();
@@ -155,6 +195,13 @@ public class CellularVpnService extends VpnService {
         if (socksServer != null) {
             socksServer.stop();
         }
-        super.onDestroy();
+
+        Cellularvpn.stopStack();
+
+         */
     }
+
+
+    @Override
+    public IBinder onBind(Intent intent) { return null; }
 }

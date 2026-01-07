@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"syscall"
 	"time"
 
@@ -32,12 +33,31 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+var (
+	currStack  *stack.Stack
+	stopCtx    context.Context
+	stopCancel context.CancelFunc
+	mu         sync.Mutex // 保证启动和关闭的原子性
+)
+
 // android build   gomobile bind -androidapi=23 -target=android -ldflags "-checklinkname=0 -s -w"
 func StartStack(fd int, netHandle int64) {
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if currStack != nil {
+		internalStop()
+	}
+	// 2. 初始化全局停止控制
+	stopCtx, stopCancel = context.WithCancel(context.Background())
+
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol},
 	})
+	currStack = s
+
 	ep, _ := fdbased.New(&fdbased.Options{
 		FDs:            []int{fd},
 		MTU:            1500,
@@ -61,11 +81,29 @@ func StartStack(fd int, netHandle int64) {
 		{Destination: defaultRoute, NIC: nicID},
 	})
 	fmt.Println("StartStack: 路由表设置完成")
-	go handleTCP(s, netHandle)
-	go handleUDP(s, netHandle)
+	go handleTCP(s, netHandle, stopCtx)
+	go handleUDP(s, netHandle, stopCtx)
 }
 
-func handleTCP(s *stack.Stack, netHandle int64) {
+func StopStack() {
+	mu.Lock()
+	defer mu.Unlock()
+	internalStop()
+}
+
+func internalStop() {
+	if stopCancel != nil {
+		stopCancel() // 通知所有 handle 协程退出
+	}
+	if currStack != nil {
+		// 移除所有网卡并关闭栈，这会强制中断现有的 Endpoint
+		currStack.Close()
+		currStack = nil
+	}
+	fmt.Println("StartStack: 协议栈已优雅关闭")
+}
+
+func handleTCP(s *stack.Stack, netHandle int64, ctx context.Context) {
 	fmt.Printf("handleTCP: netHandle=%d\n", netHandle)
 	f := tcp.NewForwarder(s, 0, 1024, func(r *tcp.ForwarderRequest) {
 		var wq waiter.Queue
@@ -95,12 +133,17 @@ func handleTCP(s *stack.Stack, netHandle int64) {
 		defer outConn.Close()
 
 		go io.Copy(inConn, outConn)
+		go func() {
+			<-ctx.Done()
+			inConn.Close()
+			outConn.Close()
+		}()
 		io.Copy(outConn, inConn)
 	})
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, f.HandlePacket)
 }
 
-func handleUDP(s *stack.Stack, netHandle int64) {
+func handleUDP(s *stack.Stack, netHandle int64, ctx context.Context) {
 	fmt.Printf("handleUDP: netHandle=%d\n", netHandle)
 	// 修正：增加 bool 返回值以匹配 ForwarderHandler 签名
 	f := udp.NewForwarder(s, func(r *udp.ForwarderRequest) bool {
@@ -145,6 +188,11 @@ func handleUDP(s *stack.Stack, netHandle int64) {
 					inConn.Write(buf[:n])
 				}
 				cancel()
+			}()
+			go func() {
+				<-ctx.Done()
+				inConn.Close()
+				realOutConn.Close()
 			}()
 
 			// 发送请求数据

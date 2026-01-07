@@ -61,11 +61,13 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-         vpnStart = findViewById(R.id.vpn_start);
+        vpnStart = findViewById(R.id.vpn_start);
         vpnStart.setOnClickListener(v -> {
 
             if(Status.vpnIsRunning){
+                System.out.println("stop");
                 stopService(new Intent(this, CellularVpnService.class));
+                System.out.println("stop1");
                 Status.vpnIsRunning=false;
                 vpnStart.setText(R.string.startVpnText);
             }else {
@@ -119,7 +121,12 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         Intent intent = new Intent(this, CellularVpnService.class);
-        startService(intent);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent);
+        } else {
+            startService(intent);
+        }
         Status.vpnIsRunning=true;
+        vpnStart.setText(R.string.stopVpnText);
     }
 }

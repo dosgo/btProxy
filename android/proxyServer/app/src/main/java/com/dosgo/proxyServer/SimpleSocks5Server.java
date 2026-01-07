@@ -56,7 +56,9 @@ public class SimpleSocks5Server {
     public void stop() {
         isRunning = false;
         try {
-            if (serverSocket != null) serverSocket.close();
+            if (serverSocket != null){
+                serverSocket.close();
+            }
             threadPool.shutdownNow();
             Log.d(TAG, "SOCKS5 服务已停止");
         } catch (IOException e) {
